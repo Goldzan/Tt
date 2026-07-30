@@ -1,7 +1,7 @@
 /*
  * build-tool.js — fold the standalone tool into one file.
  *
- *   npm run build:tool          write public/tool.html
+ *   npm run build:tool          write public/index.html
  *   node scripts/build-tool.js --check   fail if it is out of date
  *
  * The tool is meant to be a single HTML file you can copy onto a memory stick
@@ -22,7 +22,7 @@ var path = require('path');
 
 var ROOT = path.join(__dirname, '..');
 var TEMPLATE = path.join(ROOT, 'tool', 'tool.html');
-var OUT = path.join(ROOT, 'public', 'tool.html');
+var OUT = path.join(ROOT, 'public', 'index.html');
 
 var BANNER = [
   '<!--',
@@ -102,13 +102,13 @@ function main() {
 
   if (check) {
     if (current === html) {
-      console.log('public/tool.html is up to date (' + (html.length / 1024).toFixed(0) + ' KB).');
+      console.log('public/index.html is up to date (' + (html.length / 1024).toFixed(0) + ' KB).');
       return;
     }
     console.error(
       current === null
-        ? 'public/tool.html is missing. Run: npm run build:tool'
-        : 'public/tool.html is out of date — a source under tool/, src/ or vendor/ has ' +
+        ? 'public/index.html is missing. Run: npm run build:tool'
+        : 'public/index.html is out of date — a source under tool/, src/ or vendor/ has ' +
           'changed since it was built. Run: npm run build:tool'
     );
     process.exit(1);
@@ -116,7 +116,7 @@ function main() {
 
   fs.mkdirSync(path.dirname(OUT), { recursive: true });
   fs.writeFileSync(OUT, html);
-  console.log('public/tool.html — ' + (html.length / 1024).toFixed(0) + ' KB' +
+  console.log('public/index.html — ' + (html.length / 1024).toFixed(0) + ' KB' +
     (current === html ? ' (unchanged)' : ''));
 }
 
