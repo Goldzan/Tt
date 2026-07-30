@@ -1,0 +1,316 @@
+/*
+ * tool.css — the standalone tool's own styling.
+ *
+ * Self-contained on purpose: the built file is meant to work off a disk with no
+ * network at all, so it cannot borrow the shop's stylesheet or its webfont. The
+ * look is the shop's — hard shadows, square corners, mono labels — set in
+ * system faces.
+ */
+
+:root {
+  --paper: #f6f4ef;
+  --card: #fffefb;
+  --ink: #17171a;
+  --muted: #6b6b73;
+  --line: #dcd8ce;
+  --accent: #b24c33;
+  --edge: 1.5px;
+  --shadow: 4px 4px 0 var(--ink);
+  --shadow-sm: 3px 3px 0 var(--ink);
+  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 0 20px 60px;
+  background: var(--paper);
+  color: var(--ink);
+  font: 15px/1.5 var(--font);
+}
+
+header, main, footer { max-width: 1240px; margin: 0 auto; }
+
+header { padding: 30px 0 20px; }
+header h1 {
+  margin: 0 0 8px;
+  font-size: 30px;
+  letter-spacing: -.02em;
+}
+header p { margin: 0; max-width: 60ch; color: var(--muted); }
+
+main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 390px;
+  gap: 28px;
+  align-items: start;
+}
+@media (max-width: 980px) { main { grid-template-columns: 1fr; } }
+
+/* ------------------------------------------------------------------ stage */
+
+.stage {
+  position: sticky;
+  top: 20px;
+  padding: 16px;
+  background: var(--card);
+  border: var(--edge) solid var(--ink);
+  box-shadow: var(--shadow);
+}
+@media (max-width: 980px) { .stage { position: static; } }
+
+.stage.busy { opacity: .72; }
+
+#view {
+  display: block;
+  width: 100%;
+  background: #fff;
+}
+
+/* A transparent picture needs something behind it that reads as "nothing",
+   and the convention for that is a checkerboard. */
+#view.alpha {
+  background-color: #fff;
+  background-image:
+    linear-gradient(45deg, #e6e4df 25%, transparent 25%, transparent 75%, #e6e4df 75%),
+    linear-gradient(45deg, #e6e4df 25%, transparent 25%, transparent 75%, #e6e4df 75%);
+  background-size: 18px 18px;
+  background-position: 0 0, 9px 9px;
+}
+
+.readout {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: var(--edge) solid var(--ink);
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--muted);
+}
+.readout span:first-child { color: var(--ink); }
+
+.bar { height: 3px; margin-top: 8px; background: var(--line); }
+.bar i { display: block; height: 100%; width: 0; background: var(--accent); }
+.bar i[hidden] { display: none; }
+
+/* --------------------------------------------------------------- controls */
+
+.panel {
+  padding: 18px;
+  margin-bottom: 18px;
+  background: var(--card);
+  border: var(--edge) solid var(--ink);
+  box-shadow: var(--shadow-sm);
+}
+
+.panel h2 {
+  margin: 0 0 15px;
+  padding-bottom: 9px;
+  border-bottom: var(--edge) solid var(--ink);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+}
+
+.panel h3 {
+  margin: 22px 0 4px;
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--muted);
+}
+
+.field { display: block; margin-bottom: 14px; }
+.field.grow { flex: 1; margin-bottom: 0; }
+
+.label {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.value { font-family: var(--mono); font-weight: 400; color: var(--muted); }
+
+input[type=text], input[type=search], input[type=number], select {
+  width: 100%;
+  padding: 9px 10px;
+  background: #fff;
+  border: var(--edge) solid var(--ink);
+  font: inherit;
+  color: inherit;
+  border-radius: 0;
+}
+input:focus-visible, select:focus-visible, button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+input[type=range] { width: 100%; accent-color: var(--accent); }
+
+input[type=color] {
+  width: 52px;
+  height: 34px;
+  padding: 2px;
+  background: #fff;
+  border: var(--edge) solid var(--ink);
+  cursor: pointer;
+}
+input[type=color]:disabled { opacity: .4; cursor: not-allowed; }
+
+.row { display: flex; gap: 9px; align-items: flex-end; }
+.row.tight { margin-bottom: 14px; }
+.row input[type=search] { flex: 1; }
+
+.check {
+  display: flex;
+  gap: 9px;
+  margin-bottom: 14px;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+.check input { margin-top: 3px; accent-color: var(--accent); }
+.check b { display: block; font-weight: 600; }
+
+.hint { margin: 4px 0 0; font-size: 12.5px; color: var(--muted); }
+
+.size { margin: 10px 0 2px; font-family: var(--mono); font-size: 13px; }
+
+/* ---------------------------------------------------------------- buttons */
+
+.btn {
+  padding: 9px 14px;
+  background: var(--card);
+  border: var(--edge) solid var(--ink);
+  box-shadow: 2px 2px 0 var(--ink);
+  font: 600 13.5px var(--font);
+  color: inherit;
+  cursor: pointer;
+  border-radius: 0;
+}
+.btn:hover { transform: translate(1px, 1px); box-shadow: 1px 1px 0 var(--ink); }
+.btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+.btn.primary { background: var(--accent); color: #fff; }
+.btn.wide { display: block; width: 100%; margin-bottom: 14px; }
+.btn.small { padding: 6px 10px; font-size: 12.5px; }
+.btn[aria-pressed=true] { background: var(--ink); color: var(--paper); }
+
+.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--muted);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.link:disabled { opacity: .4; cursor: not-allowed; text-decoration: none; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 12px; }
+.chip {
+  padding: 6px 10px;
+  background: var(--card);
+  border: var(--edge) solid var(--ink);
+  font: 600 12px var(--mono);
+  cursor: pointer;
+  border-radius: 0;
+}
+.chip:hover { background: var(--ink); color: var(--paper); }
+
+/* --------------------------------------------------------------- palettes */
+
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(62px, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.swatch {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  height: 46px;
+  padding: 8px;
+  border: var(--edge) solid var(--ink);
+  cursor: pointer;
+  border-radius: 0;
+}
+.swatch.on { box-shadow: 0 0 0 2px var(--accent) inset; }
+.swatch b { display: block; height: 2px; border-radius: 2px; }
+.swatch b:nth-child(2) { width: 78%; }
+.swatch b:nth-child(3) { width: 56%; }
+
+.modes { display: flex; gap: 14px; margin-bottom: 12px; font-size: 13.5px; }
+.modes label { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+.modes input { accent-color: var(--accent); }
+
+.stop { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.stop span { flex: 1; font-size: 12.5px; color: var(--muted); }
+
+/* ----------------------------------------------------------------- search */
+
+#results {
+  margin-top: 10px;
+  border: var(--edge) solid var(--ink);
+  overflow: hidden;
+}
+#results[hidden] { display: none; }
+#results button {
+  display: block;
+  width: 100%;
+  padding: 9px 11px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: var(--card);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+#results button:last-child { border-bottom: 0; }
+#results button:hover { background: var(--paper); }
+.r-name { display: block; font-weight: 700; font-size: 14px; }
+.r-meta { display: block; font-size: 12.5px; color: var(--muted); }
+
+/* -------------------------------------------------------------------- map */
+
+#map {
+  height: 240px;
+  margin: 12px 0 14px;
+  border: var(--edge) solid var(--ink);
+  background: var(--paper);
+  font-size: 12px;
+}
+.leaflet-container { background: var(--paper); font: inherit; }
+.leaflet-control-zoom a, .leaflet-control-attribution { border-radius: 0 !important; }
+
+.pin {
+  width: 20px;
+  height: 20px;
+  background: var(--accent);
+  border: var(--edge) solid var(--ink);
+  box-shadow: 2px 2px 0 var(--ink);
+}
+
+/* ----------------------------------------------------------------- footer */
+
+footer {
+  margin-top: 34px;
+  padding-top: 16px;
+  border-top: var(--edge) solid var(--line);
+  font-size: 12px;
+  color: var(--muted);
+}
+footer p { margin: 0 0 5px; }
+footer a { color: inherit; }

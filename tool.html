@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contour map maker</title>
+<!--
+  The data-inline attributes are what scripts/build-tool.js replaces with the
+  file's contents, producing public/tool.html: one file, no requests, opens off
+  a disk. Edit this template, never the built file.
+-->
+<link rel="stylesheet" data-inline="vendor/leaflet.css">
+<link rel="stylesheet" data-inline="tool/tool.css">
+</head>
+<body>
+
+<header>
+  <h1>Contour map maker</h1>
+  <p>Pick a place, choose a shape and some colours, download a PNG. Everything happens
+     in this page — no account, no server, nothing uploaded.</p>
+</header>
+
+<main>
+
+  <div class="stage" id="stage">
+    <canvas id="view" width="1600" height="1200"></canvas>
+    <div class="readout">
+      <span id="status">Loading…</span>
+      <span id="stats"></span>
+    </div>
+    <div class="bar"><i id="progress" hidden></i></div>
+  </div>
+
+  <div class="controls">
+
+    <section class="panel">
+      <h2>Where</h2>
+      <div class="row">
+        <input type="search" id="q" placeholder="Mount Rainier, Snowdon, Yosemite…"
+               autocomplete="off" spellcheck="false">
+        <button class="btn" id="search-go" type="button">Search</button>
+      </div>
+      <div id="results" hidden></div>
+      <p class="hint" id="search-hint">Search a place, drag the pin, or type coordinates.</p>
+
+      <div id="map"></div>
+
+      <div class="row tight">
+        <label class="field grow">
+          <span class="label">Latitude</span>
+          <input type="number" id="lat" step="0.00001" min="-85.05" max="85.05">
+        </label>
+        <label class="field grow">
+          <span class="label">Longitude</span>
+          <input type="number" id="lng" step="0.00001" min="-180" max="180">
+        </label>
+        <label class="field grow">
+          <span class="label">Basemap</span>
+          <select id="basemap">
+            <option value="osm">Streets</option>
+            <option value="terrain">Relief</option>
+          </select>
+        </label>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Terrain</h2>
+
+      <label class="field">
+        <span class="label">Area covered <span class="value" id="width-val">12 km</span></span>
+        <input type="range" id="width" min="0" max="1000" step="1" value="530">
+      </label>
+
+      <label class="field">
+        <span class="label">Contour lines <span class="value" id="levels-val">20</span></span>
+        <input type="range" id="levels" min="5" max="60" step="1" value="20">
+      </label>
+
+      <label class="field">
+        <span class="label">Terrain detail</span>
+        <select id="detail">
+          <option value="low">Low — fastest</option>
+          <option value="medium" selected>Medium</option>
+          <option value="high">High — more tiles</option>
+        </select>
+      </label>
+
+      <label class="check">
+        <input type="checkbox" id="tidy">
+        <span><b>Tidy up tiny loops</b>
+          <span class="hint">Drops the specks the elevation data throws up.</span></span>
+      </label>
+    </section>
+
+    <section class="panel">
+      <h2>Image</h2>
+
+      <div class="row tight">
+        <label class="field grow">
+          <span class="label">Width (px)</span>
+          <input type="number" id="img-w" min="200" max="10000" step="10">
+        </label>
+        <label class="field grow">
+          <span class="label">Height (px)</span>
+          <input type="number" id="img-h" min="200" max="10000" step="10">
+        </label>
+        <button class="btn" id="swap" type="button" title="Swap width and height">↔</button>
+      </div>
+
+      <div class="chips" id="aspects"></div>
+      <p class="hint">The ground follows the picture: a tall image covers a tall piece of
+        country, not a wide one with bars.</p>
+
+      <label class="field">
+        <span class="label">Margin <span class="value" id="margin-val">4%</span></span>
+        <input type="range" id="margin" min="0" max="20" step="1" value="4">
+      </label>
+    </section>
+
+    <section class="panel">
+      <h2>Colours</h2>
+
+      <div class="swatches" id="palettes"></div>
+
+      <button class="btn wide" id="custom-toggle" type="button" aria-pressed="false">
+        Custom colours
+      </button>
+
+      <div id="custom-panel" hidden>
+        <div class="modes">
+          <label><input type="radio" name="mode" value="solid" checked> One colour</label>
+          <label><input type="radio" name="mode" value="ramp"> Low-to-high ramp</label>
+        </div>
+
+        <div id="solid-row" class="field">
+          <span class="label">Line colour</span>
+          <input type="color" id="ink" value="#1a1a1a">
+        </div>
+
+        <div id="ramp-row" hidden>
+          <span class="label">Ramp stops</span>
+          <div id="stops"></div>
+          <button class="btn small" id="add-stop" type="button">Add a stop</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <span class="label">Background</span>
+        <input type="color" id="bg" value="#faf9f5">
+      </div>
+
+      <label class="check">
+        <input type="checkbox" id="transparent">
+        <span><b>Transparent background</b>
+          <span class="hint">The PNG keeps its alpha, so it drops onto anything.</span></span>
+      </label>
+
+      <label class="field">
+        <span class="label">Line thickness <span class="value" id="weight-val">1.0×</span></span>
+        <input type="range" id="weight" min="0.2" max="4" step="0.1" value="1">
+      </label>
+
+      <h3>Index contours</h3>
+      <p class="hint">Every nth line drawn heavier, the way a printed sheet marks the ones
+        you count by.</p>
+
+      <label class="field">
+        <span class="label">Emphasis <span class="value" id="index-every-val">every 5</span></span>
+        <input type="range" id="index-every" min="0" max="12" step="1" value="5">
+      </label>
+
+      <label class="field">
+        <span class="label">How much heavier <span class="value" id="index-width-val">2.0×</span></span>
+        <input type="range" id="index-width" min="1" max="5" step="0.1" value="2">
+      </label>
+
+      <label class="check">
+        <input type="checkbox" id="index-tint">
+        <span><b>Give them their own colour</b></span>
+      </label>
+      <div class="field">
+        <input type="color" id="index-ink" value="#b24c33" disabled>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Download</h2>
+
+      <label class="field">
+        <span class="label">Resolution</span>
+        <select id="scale">
+          <option value="1">1× — as sized above</option>
+          <option value="2">2×</option>
+          <option value="3">3×</option>
+          <option value="4">4×</option>
+        </select>
+      </label>
+
+      <label class="field">
+        <span class="label">File name</span>
+        <input type="text" id="filename" spellcheck="false">
+      </label>
+
+      <p class="size">PNG: <span id="export-size">—</span></p>
+      <p class="hint" id="export-note"></p>
+
+      <button class="btn primary wide" id="download" type="button">Download PNG</button>
+      <p class="hint">The contours are traced again at the full size, so a 4× file is
+        genuinely sharper rather than an enlargement.</p>
+    </section>
+
+  </div>
+</main>
+
+<footer>
+  <p id="attribution"></p>
+  <p>Place search © <a href="https://www.openstreetmap.org/copyright" target="_blank"
+     rel="noopener">OpenStreetMap</a> contributors, via Nominatim. Basemap tiles ©
+     OpenStreetMap contributors and the AWS Terrain Tiles registry.</p>
+</footer>
+
+<script data-inline="vendor/leaflet.js"></script>
+<script data-inline="src/elevation.js"></script>
+<script data-inline="src/contour.js"></script>
+<script data-inline="src/palettes.js"></script>
+<script data-inline="src/search.js"></script>
+<script data-inline="src/map.js"></script>
+<script data-inline="tool/tool-palettes.js"></script>
+<script data-inline="tool/tool-render.js"></script>
+<script data-inline="tool/tool.js"></script>
+</body>
+</html>
