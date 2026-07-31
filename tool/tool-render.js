@@ -133,7 +133,7 @@
    * rotated to the tangent there, which is what makes the sentence bend with
    * the ground instead of stepping around it.
    */
-  function letter(ctx, layer, text, place, budget) {
+  function letter(ctx, layer, text, place, budget, space) {
     var textpath = Topo.textpath;
     var size = layer.fontSize;
     if (!(size > 0)) return { drawn: 0, clipped: false };
@@ -172,7 +172,9 @@
       var glyphs = textpath.layout(points, cum, measured, {
         closed: isRing(points),
         gap: gap,
-        limit: budget - drawn
+        limit: budget - drawn,
+        size: size,
+        space: space
       });
 
       for (var g = 0; g < glyphs.length; g++) {
@@ -235,8 +237,25 @@
     var clipped = false;
 
     if (text) {
+      /*
+       * One record of where the letters have gone, shared by every layer, so a
+       * word keeps clear of the words on the contours either side of it as well
+       * as of its own line's. The cell is set off the largest lettering on the
+       * page, which is what keeps a neighbour at most one bucket away.
+       *
+       * Lower ground is lettered first and so has first claim. That is the
+       * useful way round: it is the valleys that crowd together on a steep map,
+       * and giving the lowest line of a bunched set its words — rather than
+       * whichever happened to come last — keeps the labelling of a slope
+       * consistent from one picture to the next.
+       */
+      var biggest = spec.layers.reduce(function (max, layer) {
+        return Math.max(max, layer.fontSize);
+      }, 0);
+      var space = Topo.textpath.occupancy(1.5 * (biggest || 1));
+
       spec.layers.forEach(function (layer) {
-        var set = letter(ctx, layer, text, text.place, MAX_GLYPHS - glyphs);
+        var set = letter(ctx, layer, text, text.place, MAX_GLYPHS - glyphs, space);
         glyphs += set.drawn;
         clipped = clipped || set.clipped;
       });
