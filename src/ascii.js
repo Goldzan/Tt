@@ -48,6 +48,17 @@
    */
   var ADVANCE = 0.6;
 
+  /*
+   * The words the block design repeats, and what goes between them.
+   *
+   * The separator earns its place: the words run on across the ends of rows so
+   * that every cell is filled, and with nothing between them a block reads
+   * RIDGESUMMITSCREE.
+   */
+  var WORDS = 'RIDGE, SUMMIT, SCREE, CRAG, COL, SPUR, GULLY, CIRQUE, TARN, ' +
+    'MORAINE, SADDLE, MASSIF';
+  var SEPARATOR = '·';
+
   /**
    * The ramp control, parsed.
    *
@@ -58,6 +69,51 @@
   function ramp(text) {
     var chars = Array.from(String(text === undefined || text === null ? '' : text));
     return chars.length ? chars : Array.from(RAMP);
+  }
+
+  /**
+   * The word list, parsed.
+   *
+   * Commas and newlines both separate, so a list can be typed either way round
+   * without being told which. Spaces do not, so a name of two words stays one
+   * entry and is never broken in the middle by the separator.
+   */
+  function words(text) {
+    var list = String(text === undefined || text === null ? '' : text)
+      .split(/[,\n]/)
+      .map(function (word) { return word.trim(); })
+      .filter(function (word) { return word.length > 0; });
+
+    return list.length ? list : words(WORDS);
+  }
+
+  /**
+   * Exactly `count` characters of the word list, repeated with the separator
+   * between.
+   *
+   * Row boundaries are not consulted. The caller lays these out left to right
+   * and top to bottom, so a word runs off the end of one row and continues on
+   * the next — which is what makes the block solid, with no ragged edge and no
+   * cell left empty.
+   *
+   * Words are non-empty by the time they get here, so the loop always advances
+   * even when the separator is blank.
+   */
+  function stream(list, separator, count) {
+    var want = Math.max(0, count | 0);
+    var sep = Array.from(String(separator === undefined || separator === null
+      ? SEPARATOR : separator));
+    var out = [];
+    var i = 0;
+
+    while (out.length < want) {
+      var word = Array.from(list[i % list.length]);
+      for (var k = 0; k < word.length && out.length < want; k++) out.push(word[k]);
+      for (var s = 0; s < sep.length && out.length < want; s++) out.push(sep[s]);
+      i++;
+    }
+
+    return out;
   }
 
   /**
@@ -160,7 +216,11 @@
   Topo.ascii = {
     RAMP: RAMP,
     ADVANCE: ADVANCE,
+    WORDS: WORDS,
+    SEPARATOR: SEPARATOR,
     ramp: ramp,
+    words: words,
+    stream: stream,
     rowsFor: rowsFor,
     cells: cells,
     indices: indices
