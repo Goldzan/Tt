@@ -32,6 +32,24 @@
   // same number TIDY_MIN_LOOP.
   var TIDY_MIN_LOOP = 0.008;
 
+  /*
+   * A ceiling on the letters in one picture. Text is laid out on every repaint,
+   * and a small enough size on a dense enough map asks for millions of glyphs —
+   * which is not a picture anyone wants, but is a locked-up tab. Stopping at a
+   * number says the same thing faster, and draw() reports that it did.
+   */
+  var MAX_GLYPHS = 40000;
+
+  /*
+   * How much bigger an index contour's lettering is. The stroke renderer makes
+   * those lines indexWidth times heavier; matching that outright would make the
+   * words on them twice the size and turn emphasis into a headline, so the
+   * square root is taken — 2x the weight becomes 1.4x the lettering.
+   */
+  function textScaleFor(palette, index) {
+    return Math.sqrt(Topo.palettes.widthFor(palette, index, 1));
+  }
+
   /**
    * Where the map sits inside a picture of this size.
    *
@@ -54,8 +72,10 @@
    * width, so an index contour stays proportionally heavier at every setting.
    *
    * Paths come out as bare coordinate arrays, which is what draw() strokes.
+   * Whether one is a ring is not carried alongside them: contour.js closes a
+   * ring by repeating its first point, so the array says so itself (isRing).
    */
-  function layers(result, palette, outputWidth, weight) {
+  function layers(result, palette, outputWidth, weight, textSize) {
     var palettes = Topo.palettes;
     var scale = outputWidth / DESIGN_WIDTH;
     var total = result.layers.length;
@@ -67,20 +87,106 @@
         return {
           colour: palettes.inkFor(palette, layer.index, total),
           lineWidth: palettes.widthFor(palette, layer.index, base) * scale,
+          // Carried so the lettering can say which line it is and how high it
+          // runs, and sized off the same canonical width as the stroke — a
+          // 4000 px download has to be the preview enlarged, words and all.
+          elevation: layer.elevation,
+          index: layer.index,
+          fontSize: (textSize || 0) * textScaleFor(palette, layer.index) * scale,
           paths: layer.paths.map(function (path) { return path.points; })
         };
       });
   }
 
-  /** A whole picture: size, background and layers, ready to draw. */
+  /** A whole picture: size, background, layers and lettering, ready to draw. */
   function geometry(result, palette, width, height, options) {
     options = options || {};
+    var text = options.text || null;
     return {
       width: width,
       height: height,
       background: options.transparent ? null : (palette.background || null),
-      layers: layers(result, palette, width, options.weight)
+      text: text && text.on ? text : null,
+      layers: layers(result, palette, width, options.weight, text ? text.size : 0)
     };
+  }
+
+  /**
+   * Is this path a closed ring? contour.js repeats the first point to close
+   * one, and resample() is careful to finish exactly on the original endpoint,
+   * so this is an equality test rather than a guess. The tolerance is there for
+   * the arithmetic, not for the data.
+   */
+  function isRing(points) {
+    var n = points.length;
+    return n >= 6 &&
+      Math.abs(points[0] - points[n - 2]) < 1e-9 &&
+      Math.abs(points[1] - points[n - 1]) < 1e-9;
+  }
+
+  /**
+   * Draw one layer's contours as words instead of as a stroke.
+   *
+   * The phrase is measured once for the whole layer — every path on a level
+   * says the same thing, and measuring per path would repeat that work a
+   * thousand times over. Each glyph is then placed by its own midpoint and
+   * rotated to the tangent there, which is what makes the sentence bend with
+   * the ground instead of stepping around it.
+   */
+  function letter(ctx, layer, text, place, budget) {
+    var textpath = Topo.textpath;
+    var size = layer.fontSize;
+    if (!(size > 0)) return { drawn: 0, clipped: false };
+    if (budget <= 0) return { drawn: 0, clipped: true };
+
+    var phrase = textpath.resolve(
+      textpath.phraseFor(text.phrases, layer.index),
+      { place: place, elevation: layer.elevation, index: layer.index }
+    );
+    if (text.caps) phrase = phrase.toUpperCase();
+    if (!phrase) return { drawn: 0, clipped: false };
+
+    ctx.font = textpath.font(size, text.weight);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = Topo.palettes.css(layer.colour);
+
+    var width = textpath.widths(function (ch) { return ctx.measureText(ch).width; });
+    var measured = textpath.measurePhrase(phrase, width, text.tracking * size);
+    var gap = text.gap * size;
+    var drawn = 0;
+
+    for (var i = 0; i < layer.paths.length; i++) {
+      // Stopping is reported by the fact of stopping, not by counting up to the
+      // ceiling: layout only ever emits whole phrases, so the total lands just
+      // under the budget and never on it. Out of room with paths still to go is
+      // the thing worth saying.
+      if (budget - drawn < measured.glyphs.length) {
+        return { drawn: drawn, clipped: true };
+      }
+
+      var points = layer.paths[i];
+      if (points.length < 4) continue;
+
+      var cum = textpath.cumulative(points);
+      var glyphs = textpath.layout(points, cum, measured, {
+        closed: isRing(points),
+        gap: gap,
+        limit: budget - drawn
+      });
+
+      for (var g = 0; g < glyphs.length; g++) {
+        ctx.save();
+        ctx.translate(glyphs[g].x, glyphs[g].y);
+        ctx.rotate(glyphs[g].angle);
+        ctx.fillText(glyphs[g].char, 0, 0);
+        ctx.restore();
+      }
+
+      drawn += glyphs.length;
+    }
+
+    return { drawn: drawn, clipped: false };
   }
 
   /**
@@ -89,10 +195,15 @@
    * Round caps and joins are what make a contour end look drawn rather than
    * cut, and they are also why the whole layer is one path: overlapping round
    * joins in a single stroke() do not darken each other.
+   *
+   * With lettering on, the stroke is what the words replace, so it is drawn
+   * only if the picture asked to keep it — underneath, so the words sit on top.
    */
   function draw(canvas, spec) {
     var ctx = canvas.getContext('2d');
     var scale = canvas.width / spec.width;
+    var text = spec.text;
+    var stroke = !text || text.keepLines;
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -106,19 +217,39 @@
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    spec.layers.forEach(function (layer) {
-      ctx.strokeStyle = Topo.palettes.css(layer.colour);
-      ctx.lineWidth = layer.lineWidth;
-      ctx.beginPath();
-      layer.paths.forEach(function (points) {
-        if (points.length < 4) return;
-        ctx.moveTo(points[0], points[1]);
-        for (var i = 2; i < points.length; i += 2) ctx.lineTo(points[i], points[i + 1]);
+    if (stroke) {
+      spec.layers.forEach(function (layer) {
+        ctx.strokeStyle = Topo.palettes.css(layer.colour);
+        ctx.lineWidth = layer.lineWidth;
+        ctx.beginPath();
+        layer.paths.forEach(function (points) {
+          if (points.length < 4) return;
+          ctx.moveTo(points[0], points[1]);
+          for (var i = 2; i < points.length; i += 2) ctx.lineTo(points[i], points[i + 1]);
+        });
+        ctx.stroke();
       });
-      ctx.stroke();
-    });
+    }
+
+    var glyphs = 0;
+    var clipped = false;
+
+    if (text) {
+      spec.layers.forEach(function (layer) {
+        var set = letter(ctx, layer, text, text.place, MAX_GLYPHS - glyphs);
+        glyphs += set.drawn;
+        clipped = clipped || set.clipped;
+      });
+    }
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+    // Said out loud rather than left as a mystery: at a small enough size the
+    // ceiling stops the lettering part way down the picture, and the only cure
+    // is a bigger size or fewer lines.
+    spec.glyphs = glyphs;
+    spec.clipped = clipped;
+
     return canvas;
   }
 
@@ -188,9 +319,11 @@
     PREVIEW_SPACING: PREVIEW_SPACING,
     EXPORT_SPACING: EXPORT_SPACING,
     TIDY_MIN_LOOP: TIDY_MIN_LOOP,
+    MAX_GLYPHS: MAX_GLYPHS,
     frame: frame,
     layers: layers,
     geometry: geometry,
+    isRing: isRing,
     draw: draw,
     trace: trace,
     offscreen: offscreen,

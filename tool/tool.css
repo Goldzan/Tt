@@ -19,6 +19,27 @@
   --shadow-sm: 3px 3px 0 var(--ink);
   --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --lettering: "Source Code Pro", var(--mono);
+}
+
+/*
+ * The face the contours are lettered in, carried inside the file.
+ *
+ * This is the one webfont here, and it is vendored and inlined by
+ * build-tool.js rather than linked, because the built page has to work off a
+ * disk with no network — and because a canvas that cannot get its font does not
+ * wait or complain, it just draws in something else at the wrong widths.
+ *
+ * One file covers every weight: it is the variable cut, hence the range.
+ * Source Code Pro is © Adobe, under the SIL Open Font License 1.1 — see
+ * vendor/SOURCE-CODE-PRO-LICENSE.txt, which the build copies into the head.
+ */
+@font-face {
+  font-family: "Source Code Pro";
+  font-style: normal;
+  font-weight: 200 900;
+  font-display: swap;
+  src: url(../vendor/source-code-pro.woff2) format("woff2");
 }
 
 * { box-sizing: border-box; }
@@ -141,7 +162,7 @@ main {
 }
 .value { font-family: var(--mono); font-weight: 400; color: var(--muted); }
 
-input[type=text], input[type=search], input[type=number], select {
+input[type=text], input[type=search], input[type=number], select, textarea {
   width: 100%;
   padding: 9px 10px;
   background: #fff;
@@ -150,9 +171,22 @@ input[type=text], input[type=search], input[type=number], select {
   color: inherit;
   border-radius: 0;
 }
-input:focus-visible, select:focus-visible, button:focus-visible {
+input:focus-visible, select:focus-visible, textarea:focus-visible,
+button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+
+/* The words box. Set in the face the contours are lettered in, so what you
+ * type looks like what you will get, and resizable only downwards because a
+ * wider one would break the panel's column. */
+textarea {
+  display: block;
+  min-height: 76px;
+  resize: vertical;
+  font-family: var(--lettering);
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 input[type=range] { width: 100%; accent-color: var(--accent); }

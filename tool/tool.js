@@ -23,6 +23,7 @@
   var palettes = Topo.palettes;
   var presets = Topo.toolPalettes;
   var render = Topo.toolRender;
+  var textpath = Topo.textpath;
 
   var SLIDER_MAX = 1000;
 
@@ -66,6 +67,19 @@
     indexTint: false,
     indexInk: '#b24c33',
 
+    /* Lettering. The words are one phrase per line, cycled up the levels, and
+     * the default uses the placeholders so a fresh map says something true
+     * about itself before anyone has typed anything. Sizes are in the same
+     * canonical 1000-wide units as the line weights. */
+    textOn: false,
+    textWords: '{place}\n{elevation} m',
+    textCaps: true,
+    textSize: 7,
+    textWeight: 500,
+    textTracking: 0.06,
+    textGap: 1.5,
+    textKeepLines: false,
+
     scale: 1,
     filename: ''
   };
@@ -108,6 +122,57 @@
       state.widthM,
       area().aspect
     );
+  }
+
+  /**
+   * The lettering the controls currently describe.
+   *
+   * One helper for both the preview and the download, because the two must
+   * describe the same picture — a difference here would only ever be found
+   * after the PNG had been saved.
+   */
+  function textOptions() {
+    return {
+      on: state.textOn,
+      phrases: textpath.phrases(state.textWords),
+      place: state.place,
+      caps: state.textCaps,
+      size: state.textSize,
+      weight: state.textWeight,
+      tracking: state.textTracking,
+      gap: state.textGap,
+      keepLines: state.textKeepLines
+    };
+  }
+
+  /**
+   * Wait for the lettering face before drawing with it.
+   *
+   * An @font-face nothing in the page renders is never fetched, and a canvas
+   * asked to use one it has not got does not wait — it draws in a fallback with
+   * different widths, so the layout would be measured against one face and set
+   * in another. Resolved once and remembered; a browser without the API, or one
+   * that fails to load it, falls through to the monospace stack and still draws.
+   */
+  var fontReady = null;
+  var fontLoaded = false;
+
+  function ensureFont() {
+    if (fontReady) return fontReady;
+
+    var fonts = doc.fonts;
+    var loading = fonts && fonts.load
+      ? fonts.load('16px "Source Code Pro"').catch(function () { return null; })
+      : Promise.resolve(null);
+
+    // The flag, not the promise, is what paint() tests: a resolved promise
+    // chained to another paint would paint forever.
+    fontReady = loading.then(function (result) {
+      fontLoaded = true;
+      return result;
+    });
+
+    return fontReady;
   }
 
   /** The palette the controls currently describe. */
@@ -326,8 +391,18 @@
 
   function describe() {
     var size = exportSize();
-    return state.place + ' · ' + fmtDistance(state.widthM) + ' across · ' +
+    var line = state.place + ' · ' + fmtDistance(state.widthM) + ' across · ' +
       state.levels + ' lines · ' + size.width + ' × ' + size.height + ' px';
+
+    // The one thing about the lettering worth interrupting with: a size small
+    // enough to run past the glyph ceiling leaves part of the map unlettered,
+    // and nothing else on screen would explain why.
+    if (cache.geometry && cache.geometry.clipped) {
+      line += ' · lettering stopped at ' + cache.geometry.glyphs +
+        ' letters — try a larger letter size or fewer lines';
+    }
+
+    return line;
   }
 
   /* ---------------------------------------------------------------- painting */
@@ -342,7 +417,8 @@
     var design = designFrame();
     var spec = render.geometry(cache.result, palette(), design.width, design.height, {
       weight: state.weight,
-      transparent: state.transparent
+      transparent: state.transparent,
+      text: textOptions()
     });
     cache.geometry = spec;
 
@@ -361,6 +437,10 @@
     canvas.classList.toggle('alpha', state.transparent);
 
     render.draw(canvas, spec);
+
+    // Drawn once in whatever face was to hand, then again properly. Only ever
+    // one repeat: fontLoaded is set before this can run a second time.
+    if (spec.text && !fontLoaded) ensureFont().then(paint);
   }
 
   /* ----------------------------------------------------------------- export */
@@ -398,10 +478,16 @@
       onProgress: function (done, total) { progress(total ? done / total : 0); }
     })
       .then(function (result) {
+        // The face has to be in hand before the offscreen canvas letters with
+        // it; nothing on the page has necessarily rendered it yet.
+        return ensureFont().then(function () { return result; });
+      })
+      .then(function (result) {
         var canvas = render.offscreen(size.width, size.height);
         render.draw(canvas, render.geometry(result, palette(), size.width, size.height, {
           weight: state.weight,
-          transparent: state.transparent
+          transparent: state.transparent,
+          text: textOptions()
         }));
         var name = $('filename').value.trim() || defaultFilename();
         if (!/\.png$/i.test(name)) name += '.png';
@@ -657,6 +743,22 @@
     $('ramp-row').hidden = state.mode !== 'ramp';
   }
 
+  /* ------------------------------------------------------------------- text */
+
+  /**
+   * How many phrases the box holds, and how far up the map they reach.
+   *
+   * Worth saying because the list cycles: with three phrases and twenty
+   * contours nothing is missing, but it is not obvious from the box alone that
+   * the fourth line up has gone back to the first phrase.
+   */
+  function syncWordCount() {
+    var count = textpath.phrases(state.textWords).length;
+    $('text-count').textContent = count === 0 ? 'none'
+      : count === 1 ? '1 phrase, every line'
+        : count + ' phrases, cycled';
+  }
+
   /* ------------------------------------------------------------------- wire */
 
   function wire() {
@@ -786,6 +888,59 @@
       repaint();
     });
 
+    /* ------------------------------------------------------------ lettering */
+
+    $('text-on').addEventListener('change', function () {
+      state.textOn = $('text-on').checked;
+      $('text-panel').hidden = !state.textOn;
+      repaint();
+    });
+
+    // Typing is the one control here that fires per keystroke, and a repaint
+    // lays out every letter on the map. A short wait costs nothing and saves
+    // doing that work for each half-typed word.
+    var wordsDebounce = null;
+    $('text-words').addEventListener('input', function () {
+      state.textWords = $('text-words').value;
+      syncWordCount();
+      clearTimeout(wordsDebounce);
+      wordsDebounce = setTimeout(repaint, 150);
+    });
+
+    $('text-caps').addEventListener('change', function () {
+      state.textCaps = $('text-caps').checked;
+      repaint();
+    });
+
+    $('text-size').addEventListener('input', function () {
+      state.textSize = parseFloat($('text-size').value);
+      $('text-size-val').textContent = state.textSize.toFixed(1);
+      repaint();
+    });
+
+    $('text-weight').addEventListener('input', function () {
+      state.textWeight = parseInt($('text-weight').value, 10);
+      $('text-weight-val').textContent = state.textWeight;
+      repaint();
+    });
+
+    $('text-tracking').addEventListener('input', function () {
+      state.textTracking = parseFloat($('text-tracking').value);
+      $('text-tracking-val').textContent = state.textTracking.toFixed(2) + ' em';
+      repaint();
+    });
+
+    $('text-gap').addEventListener('input', function () {
+      state.textGap = parseFloat($('text-gap').value);
+      $('text-gap-val').textContent = state.textGap.toFixed(1) + ' em';
+      repaint();
+    });
+
+    $('text-keep-lines').addEventListener('change', function () {
+      state.textKeepLines = $('text-keep-lines').checked;
+      repaint();
+    });
+
     $('scale').addEventListener('change', function () {
       state.scale = parseFloat($('scale').value);
       syncExportNote();
@@ -832,6 +987,21 @@
     $('bg').disabled = state.transparent;
     $('scale').value = String(state.scale);
 
+    $('text-on').checked = state.textOn;
+    $('text-panel').hidden = !state.textOn;
+    $('text-words').value = state.textWords;
+    $('text-caps').checked = state.textCaps;
+    $('text-size').value = state.textSize;
+    $('text-size-val').textContent = state.textSize.toFixed(1);
+    $('text-weight').value = state.textWeight;
+    $('text-weight-val').textContent = state.textWeight;
+    $('text-tracking').value = state.textTracking;
+    $('text-tracking-val').textContent = state.textTracking.toFixed(2) + ' em';
+    $('text-gap').value = state.textGap;
+    $('text-gap-val').textContent = state.textGap.toFixed(1) + ' em';
+    $('text-keep-lines').checked = state.textKeepLines;
+    syncWordCount();
+
     $('custom-toggle').setAttribute('aria-pressed', String(state.custom));
     $('custom-panel').hidden = !state.custom;
     Array.prototype.forEach.call(doc.getElementsByName('mode'), function (radio) {
@@ -848,6 +1018,11 @@
     renderAspects();
     wire();
     syncControls();
+
+    // Started now rather than when the lettering is first switched on: it is
+    // an inlined data URI, so this costs no request and is long since ready by
+    // the time the terrain has come down the wire.
+    ensureFont();
 
     $('attribution').textContent = elevation.ATTRIBUTION;
 

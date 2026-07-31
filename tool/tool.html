@@ -185,6 +185,62 @@
     </section>
 
     <section class="panel">
+      <h2>Text lines</h2>
+
+      <label class="check">
+        <input type="checkbox" id="text-on">
+        <span><b>Draw the contours as words</b>
+          <span class="hint">The letters follow each line's curve, in place of the stroke.</span></span>
+      </label>
+
+      <div id="text-panel" hidden>
+        <div class="field">
+          <span class="label">Words <span class="value" id="text-count">1 phrase</span></span>
+          <textarea id="text-words" rows="4" spellcheck="false"
+            aria-describedby="text-words-hint"></textarea>
+          <p class="hint" id="text-words-hint">One phrase per line: the first goes on the
+            lowest contour, the next on the one above, and the list repeats up the map.
+            <code>{place}</code>, <code>{elevation}</code> (metres), <code>{feet}</code> and
+            <code>{index}</code> are filled in for you.</p>
+        </div>
+
+        <label class="check">
+          <input type="checkbox" id="text-caps">
+          <span><b>ALL CAPS</b></span>
+        </label>
+
+        <label class="field">
+          <span class="label">Letter size <span class="value" id="text-size-val">7.0</span></span>
+          <input type="range" id="text-size" min="2" max="24" step="0.5" value="7">
+        </label>
+
+        <label class="field">
+          <span class="label">Letter weight <span class="value" id="text-weight-val">500</span></span>
+          <input type="range" id="text-weight" min="200" max="900" step="50" value="500">
+        </label>
+
+        <label class="field">
+          <span class="label">Letter spacing <span class="value" id="text-tracking-val">0.06 em</span></span>
+          <input type="range" id="text-tracking" min="-0.05" max="0.5" step="0.01" value="0.06">
+        </label>
+
+        <label class="field">
+          <span class="label">Gap between repeats <span class="value" id="text-gap-val">1.5 em</span></span>
+          <input type="range" id="text-gap" min="0" max="8" step="0.1" value="1.5">
+        </label>
+
+        <label class="check">
+          <input type="checkbox" id="text-keep-lines">
+          <span><b>Keep the lines underneath</b>
+            <span class="hint">Words on top of the contours rather than instead of them.</span></span>
+        </label>
+
+        <p class="hint">A line too short to hold its phrase is left blank rather than
+          lettered with part of a word.</p>
+      </div>
+    </section>
+
+    <section class="panel">
       <h2>Download</h2>
 
       <label class="field">
@@ -224,6 +280,7 @@
 <script data-inline="src/elevation.js"></script>
 <script data-inline="src/contour.js"></script>
 <script data-inline="src/palettes.js"></script>
+<script data-inline="src/textpath.js"></script>
 <script data-inline="src/search.js"></script>
 <script data-inline="src/map.js"></script>
 <script data-inline="tool/tool-palettes.js"></script>
