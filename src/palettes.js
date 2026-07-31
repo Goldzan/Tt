@@ -68,6 +68,28 @@
     return !!palette.indexEvery && index % palette.indexEvery === palette.indexEvery - 1;
   }
 
+  /**
+   * A point along a list of colour stops, where u runs 0 to 1.
+   *
+   * Written once because two callers want it from different directions: a
+   * contour asks for level 7 of 20, a shaded letter asks for a height. They
+   * must agree, or the same ground would be one colour as a line and another
+   * as a letter.
+   */
+  function alongStops(stops, u) {
+    if (stops.length < 2) return stops[0] || [0, 0, 0];
+
+    var t = u * (stops.length - 1);
+    var i = Math.min(stops.length - 2, Math.max(0, Math.floor(t)));
+    var f = t - i;
+
+    return [
+      Math.round(stops[i][0] + (stops[i + 1][0] - stops[i][0]) * f),
+      Math.round(stops[i][1] + (stops[i + 1][1] - stops[i][1]) * f),
+      Math.round(stops[i][2] + (stops[i + 1][2] - stops[i][2]) * f)
+    ];
+  }
+
   /** Colour for one contour level, as [r, g, b]. */
   function inkFor(palette, index, total) {
     // An index contour may carry its own colour. Nothing in the shop's
@@ -76,18 +98,48 @@
     if (palette.indexInk && isIndex(palette, index)) return palette.indexInk;
 
     if (!palette.ramp) return palette.ink;
+    if (palette.ramp.length < 2) return palette.ramp[0] || palette.ink || [0, 0, 0];
 
-    var stops = palette.ramp;
-    if (stops.length < 2) return stops[0] || palette.ink || [0, 0, 0];
+    return alongStops(palette.ramp, total > 1 ? index / (total - 1) : 0);
+  }
 
-    var t = total > 1 ? (index / (total - 1)) * (stops.length - 1) : 0;
-    var i = Math.min(stops.length - 2, Math.floor(t));
-    var f = t - i;
+  /*
+   * The palest a single ink is allowed to go. Below this the low ground stops
+   * being ink washed onto the paper and starts being the paper.
+   */
+  var MIN_TONE = 0.25;
+
+  function blend(from, to, t) {
     return [
-      Math.round(stops[i][0] + (stops[i + 1][0] - stops[i][0]) * f),
-      Math.round(stops[i][1] + (stops[i + 1][1] - stops[i][1]) * f),
-      Math.round(stops[i][2] + (stops[i + 1][2] - stops[i][2]) * f)
+      Math.round(from[0] + (to[0] - from[0]) * t),
+      Math.round(from[1] + (to[1] - from[1]) * t),
+      Math.round(from[2] + (to[2] - from[2]) * t)
     ];
+  }
+
+  /**
+   * Colour for a height: 0 is the lowest ground in the picture, 1 the highest.
+   *
+   * The continuous counterpart of inkFor, for designs that say everything with
+   * colour rather than with a line per level.
+   *
+   * A palette with a ramp interpolates it. A palette with a single ink shades
+   * that ink instead, from a wash of it low down to full strength high up —
+   * because seven of the eleven presets are a single ink, and without this they
+   * would each give a picture of one flat colour that says nothing about the
+   * ground. The wash is mixed towards the palette's own background rather than
+   * towards white, which is what keeps it working on the dark presets: on Noir
+   * the low ground fades into the black paper, not out of it.
+   */
+  function inkAt(palette, t) {
+    var u = t < 0 ? 0 : t > 1 ? 1 : t;
+
+    if (palette.ramp && palette.ramp.length >= 2) return alongStops(palette.ramp, u);
+    if (palette.ramp && palette.ramp.length === 1) return palette.ramp[0];
+
+    var ink = palette.ink || [0, 0, 0];
+    var paper = palette.background || [255, 255, 255];
+    return blend(paper, ink, MIN_TONE + (1 - MIN_TONE) * u);
   }
 
   /**
@@ -139,6 +191,8 @@
     get: get,
     isIndex: isIndex,
     inkFor: inkFor,
+    inkAt: inkAt,
+    MIN_TONE: MIN_TONE,
     widthFor: widthFor,
     css: css,
     parse: parse,

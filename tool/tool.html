@@ -38,9 +38,10 @@
       <div class="modes">
         <label><input type="radio" name="design" value="contours" checked> Contour lines</label>
         <label><input type="radio" name="design" value="ascii"> ASCII art</label>
+        <label><input type="radio" name="design" value="words"> Word block</label>
       </div>
-      <p class="hint" id="design-hint">Lines drawn between heights, or the heights
-        themselves set as characters.</p>
+      <p class="hint" id="design-hint">Lines drawn between heights; the heights themselves
+        set as characters; or a block of words whose colour is the height.</p>
     </section>
 
     <section class="panel">
@@ -135,6 +136,44 @@
       <label class="field">
         <span class="label">Weight <span class="value" id="ascii-weight-val">500</span></span>
         <input type="range" id="ascii-weight" min="200" max="900" step="50" value="500">
+      </label>
+    </section>
+
+    <section class="panel" id="words-section" hidden>
+      <h2>Word block</h2>
+      <p class="hint">The words fill the frame and say the same thing everywhere. It is
+        their colour that tells you where the mountain is.</p>
+
+      <label class="field">
+        <span class="label">Across the picture <span class="value" id="word-cols-val">90</span></span>
+        <input type="range" id="word-cols" min="20" max="240" step="1" value="90">
+      </label>
+      <p class="hint">The rows follow, so the ground keeps its shape.
+        <span id="words-grid-note"></span></p>
+
+      <div class="field">
+        <span class="label">Words <span class="value" id="words-count-val">12 words</span></span>
+        <textarea id="word-list" rows="3" spellcheck="false"
+                  aria-describedby="word-list-hint"></textarea>
+        <p class="hint" id="word-list-hint">Separated by commas or one per line, so a name of
+          two words stays whole. <code>{place}</code> is filled in for you.</p>
+      </div>
+
+      <div class="row tight">
+        <label class="field grow">
+          <span class="label">Between words</span>
+          <input type="text" id="word-separator" class="lettered" maxlength="4"
+                 spellcheck="false" autocomplete="off" autocapitalize="off">
+        </label>
+        <label class="check">
+          <input type="checkbox" id="word-caps">
+          <span><b>ALL CAPS</b></span>
+        </label>
+      </div>
+
+      <label class="field">
+        <span class="label">Weight <span class="value" id="word-weight-val">500</span></span>
+        <input type="range" id="word-weight" min="200" max="900" step="50" value="500">
       </label>
     </section>
 

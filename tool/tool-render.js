@@ -168,48 +168,126 @@
    * and cheaper than the bookkeeping of another cache stage. That is what keeps
    * every ASCII control on the repaint path.
    */
+  /*
+   * How many shades of height a colour-carried design uses.
+   *
+   * Fine enough that a hillside reads as a gradient rather than as terraces,
+   * coarse enough that the colours can be worked out once and turned into
+   * strings the canvas takes directly. It must stay at or under 256: the tone
+   * per cell is kept in a Uint8Array, which would silently wrap above that.
+   */
+  var TONES = 96;
+
+  /**
+   * The measurements every grid-of-characters picture shares: where the block
+   * sits, how it divides into cells, and how big a character has to be.
+   *
+   * The row count comes from the advance ratio at a large size, not at the size
+   * the characters will be drawn at. That is deliberate: it is the *shape of
+   * the face* the rows have to answer to, and the large-size ratio is the
+   * honest measure of that, uncontaminated by the pixel rounding that inflates
+   * it at small sizes. Using the drawing size here would quietly change how
+   * many rows a picture has when it was exported at four times the scale.
+   */
+  function cellFrame(width, height, options) {
+    var area = frame(width, height, options.margin);
+    var cols = Math.max(1, Math.round(options.cols || 100));
+    var rows = Topo.ascii.rowsFor(cols, area, advanceRatio(100));
+    var cell = area.w / cols;
+
+    return {
+      area: area,
+      cols: cols,
+      rows: rows,
+      cellWidth: cell,
+      cellHeight: area.h / rows,
+      fontSize: sizeForCell(cell)
+    };
+  }
+
+  /**
+   * Colours as the canvas wants them.
+   *
+   * Built up front, one string per step, for two reasons. It keeps the drawing
+   * loop from building a string per cell — tens of thousands of them a frame —
+   * and it lets that loop decide whether the colour has actually changed by
+   * comparing what it is about to set. A single-ink palette yields the same
+   * string at every step, so it sets the fill once for the whole picture.
+   */
+  function toneStrings(palette, steps, continuous) {
+    var out = [];
+    for (var i = 0; i < steps; i++) {
+      var t = steps > 1 ? i / (steps - 1) : 0;
+      out.push(Topo.palettes.css(continuous
+        ? Topo.palettes.inkAt(palette, t)
+        : Topo.palettes.inkFor(palette, i, steps)));
+    }
+    return out;
+  }
+
   function asciiGeometry(grid, palette, width, height, options) {
     options = options || {};
 
     var ascii = Topo.ascii;
-    var area = frame(width, height, options.margin);
     var chars = ascii.ramp(options.ramp);
     if (options.invert) chars = chars.slice().reverse();
 
-    var cols = Math.max(1, Math.round(options.cols || 100));
-    var cell = area.w / cols;
-
-    /*
-     * The row count comes from the ratio at a large size, not at the size the
-     * characters will be drawn at. That is deliberate: it is the *shape of the
-     * face* the rows have to answer to, and the large-size ratio is the honest
-     * measure of that, uncontaminated by the pixel rounding that inflates it at
-     * small sizes. Using the drawing size here would quietly change how many
-     * rows a picture has when it was exported at four times the scale.
-     */
-    var rows = ascii.rowsFor(cols, area, advanceRatio(100));
-    var fontSize = sizeForCell(cell);
-
-    var colours = [];
-    for (var i = 0; i < chars.length; i++) {
-      colours.push(Topo.palettes.inkFor(palette, i, chars.length));
-    }
+    var shape = cellFrame(width, height, options);
+    var cells = ascii.cells(grid, shape.cols, shape.rows, chars.length);
 
     return {
       kind: 'ascii',
       width: width,
       height: height,
       background: options.transparent ? null : (palette.background || null),
-      area: area,
-      cols: cols,
-      rows: rows,
-      cellWidth: cell,
-      cellHeight: area.h / rows,
-      fontSize: fontSize,
+      area: shape.area,
+      cols: shape.cols,
+      rows: shape.rows,
+      cellWidth: shape.cellWidth,
+      cellHeight: shape.cellHeight,
+      fontSize: shape.fontSize,
       weight: options.weight || 400,
       chars: chars,
-      colours: colours,
-      cells: ascii.cells(grid, cols, rows, chars.length)
+      // The ramp step doubles as the tone: the character and its colour say the
+      // same thing about the ground here.
+      tint: cells.index,
+      css: toneStrings(palette, chars.length, false),
+      cells: cells
+    };
+  }
+
+  /**
+   * A solid block of repeated words, coloured by height.
+   *
+   * The other way round from the ASCII design: there the character carries the
+   * ground and the colour is decoration; here the words are the same wherever
+   * you look and the colour is the only thing that knows where the mountain is.
+   * Which is why the tones are continuous and taken from inkAt — a palette with
+   * a single ink shades that ink rather than giving one flat colour.
+   */
+  function wordsGeometry(grid, palette, width, height, options) {
+    options = options || {};
+
+    var ascii = Topo.ascii;
+    var shape = cellFrame(width, height, options);
+    var list = ascii.words(options.words);
+    if (options.caps) list = list.map(function (word) { return word.toUpperCase(); });
+
+    return {
+      kind: 'words',
+      width: width,
+      height: height,
+      background: options.transparent ? null : (palette.background || null),
+      area: shape.area,
+      cols: shape.cols,
+      rows: shape.rows,
+      cellWidth: shape.cellWidth,
+      cellHeight: shape.cellHeight,
+      fontSize: shape.fontSize,
+      weight: options.weight || 400,
+      text: ascii.stream(list, options.separator, shape.cols * shape.rows),
+      tint: ascii.cells(grid, shape.cols, shape.rows, TONES).index,
+      css: toneStrings(palette, TONES, true)
     };
   }
 
@@ -227,8 +305,7 @@
    * characters with different widths — which most ramps are, once a browser has
    * rounded them — still reads as a straight column.
    */
-  function drawAscii(ctx, spec) {
-    var index = spec.cells.index;
+  function drawCells(ctx, spec, charAt) {
     var half = spec.cellWidth / 2;
     var colour = null;
     var drawn = 0;
@@ -242,17 +319,19 @@
       var row = r * spec.cols;
 
       for (var c = 0; c < spec.cols; c++) {
-        var step = index[row + c];
-        var want = spec.colours[step];
+        var i = row + c;
+        var want = spec.css[spec.tint[i]];
 
-        // Set only on a change: a solid palette hands back the same array for
-        // every step, so that is one assignment for the whole picture.
+        // Set only on a change. Compared by what is about to be set rather than
+        // by the tone number, so a single-ink palette — whose every tone is the
+        // same string — assigns the fill once for the whole picture, while a
+        // graded one pays only where the colour really moves.
         if (want !== colour) {
           colour = want;
-          ctx.fillStyle = Topo.palettes.css(colour);
+          ctx.fillStyle = want;
         }
 
-        ctx.fillText(spec.chars[step], spec.area.x + c * spec.cellWidth + half, y);
+        ctx.fillText(charAt(i), spec.area.x + c * spec.cellWidth + half, y);
         drawn++;
       }
     }
@@ -376,8 +455,14 @@
      * background, the one scale that turns design units into pixels, and the
      * count they report back — and part company only over what goes on top.
      */
-    if (spec.kind === 'ascii') {
-      glyphs = drawAscii(ctx, spec);
+    if (spec.kind === 'ascii' || spec.kind === 'words') {
+      // The two grids of characters differ only in where the character comes
+      // from: a ramp step chosen by the height, or the next letter of the words
+      // running through the block.
+      glyphs = drawCells(ctx, spec, spec.kind === 'ascii'
+        ? function (i) { return spec.chars[spec.tint[i]]; }
+        : function (i) { return spec.text[i]; });
+
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       spec.glyphs = glyphs;
       spec.clipped = false;
@@ -505,7 +590,9 @@
     layers: layers,
     geometry: geometry,
     asciiGeometry: asciiGeometry,
+    wordsGeometry: wordsGeometry,
     advanceRatio: advanceRatio,
+    TONES: TONES,
     isRing: isRing,
     draw: draw,
     trace: trace,

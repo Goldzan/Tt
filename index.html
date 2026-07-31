@@ -1200,9 +1200,10 @@ footer a { color: inherit; }
       <div class="modes">
         <label><input type="radio" name="design" value="contours" checked> Contour lines</label>
         <label><input type="radio" name="design" value="ascii"> ASCII art</label>
+        <label><input type="radio" name="design" value="words"> Word block</label>
       </div>
-      <p class="hint" id="design-hint">Lines drawn between heights, or the heights
-        themselves set as characters.</p>
+      <p class="hint" id="design-hint">Lines drawn between heights; the heights themselves
+        set as characters; or a block of words whose colour is the height.</p>
     </section>
 
     <section class="panel">
@@ -1297,6 +1298,44 @@ footer a { color: inherit; }
       <label class="field">
         <span class="label">Weight <span class="value" id="ascii-weight-val">500</span></span>
         <input type="range" id="ascii-weight" min="200" max="900" step="50" value="500">
+      </label>
+    </section>
+
+    <section class="panel" id="words-section" hidden>
+      <h2>Word block</h2>
+      <p class="hint">The words fill the frame and say the same thing everywhere. It is
+        their colour that tells you where the mountain is.</p>
+
+      <label class="field">
+        <span class="label">Across the picture <span class="value" id="word-cols-val">90</span></span>
+        <input type="range" id="word-cols" min="20" max="240" step="1" value="90">
+      </label>
+      <p class="hint">The rows follow, so the ground keeps its shape.
+        <span id="words-grid-note"></span></p>
+
+      <div class="field">
+        <span class="label">Words <span class="value" id="words-count-val">12 words</span></span>
+        <textarea id="word-list" rows="3" spellcheck="false"
+                  aria-describedby="word-list-hint"></textarea>
+        <p class="hint" id="word-list-hint">Separated by commas or one per line, so a name of
+          two words stays whole. <code>{place}</code> is filled in for you.</p>
+      </div>
+
+      <div class="row tight">
+        <label class="field grow">
+          <span class="label">Between words</span>
+          <input type="text" id="word-separator" class="lettered" maxlength="4"
+                 spellcheck="false" autocomplete="off" autocapitalize="off">
+        </label>
+        <label class="check">
+          <input type="checkbox" id="word-caps">
+          <span><b>ALL CAPS</b></span>
+        </label>
+      </div>
+
+      <label class="field">
+        <span class="label">Weight <span class="value" id="word-weight-val">500</span></span>
+        <input type="range" id="word-weight" min="200" max="900" step="50" value="500">
       </label>
     </section>
 
@@ -2422,6 +2461,28 @@ footer a { color: inherit; }
     return !!palette.indexEvery && index % palette.indexEvery === palette.indexEvery - 1;
   }
 
+  /**
+   * A point along a list of colour stops, where u runs 0 to 1.
+   *
+   * Written once because two callers want it from different directions: a
+   * contour asks for level 7 of 20, a shaded letter asks for a height. They
+   * must agree, or the same ground would be one colour as a line and another
+   * as a letter.
+   */
+  function alongStops(stops, u) {
+    if (stops.length < 2) return stops[0] || [0, 0, 0];
+
+    var t = u * (stops.length - 1);
+    var i = Math.min(stops.length - 2, Math.max(0, Math.floor(t)));
+    var f = t - i;
+
+    return [
+      Math.round(stops[i][0] + (stops[i + 1][0] - stops[i][0]) * f),
+      Math.round(stops[i][1] + (stops[i + 1][1] - stops[i][1]) * f),
+      Math.round(stops[i][2] + (stops[i + 1][2] - stops[i][2]) * f)
+    ];
+  }
+
   /** Colour for one contour level, as [r, g, b]. */
   function inkFor(palette, index, total) {
     // An index contour may carry its own colour. Nothing in the shop's
@@ -2430,18 +2491,48 @@ footer a { color: inherit; }
     if (palette.indexInk && isIndex(palette, index)) return palette.indexInk;
 
     if (!palette.ramp) return palette.ink;
+    if (palette.ramp.length < 2) return palette.ramp[0] || palette.ink || [0, 0, 0];
 
-    var stops = palette.ramp;
-    if (stops.length < 2) return stops[0] || palette.ink || [0, 0, 0];
+    return alongStops(palette.ramp, total > 1 ? index / (total - 1) : 0);
+  }
 
-    var t = total > 1 ? (index / (total - 1)) * (stops.length - 1) : 0;
-    var i = Math.min(stops.length - 2, Math.floor(t));
-    var f = t - i;
+  /*
+   * The palest a single ink is allowed to go. Below this the low ground stops
+   * being ink washed onto the paper and starts being the paper.
+   */
+  var MIN_TONE = 0.25;
+
+  function blend(from, to, t) {
     return [
-      Math.round(stops[i][0] + (stops[i + 1][0] - stops[i][0]) * f),
-      Math.round(stops[i][1] + (stops[i + 1][1] - stops[i][1]) * f),
-      Math.round(stops[i][2] + (stops[i + 1][2] - stops[i][2]) * f)
+      Math.round(from[0] + (to[0] - from[0]) * t),
+      Math.round(from[1] + (to[1] - from[1]) * t),
+      Math.round(from[2] + (to[2] - from[2]) * t)
     ];
+  }
+
+  /**
+   * Colour for a height: 0 is the lowest ground in the picture, 1 the highest.
+   *
+   * The continuous counterpart of inkFor, for designs that say everything with
+   * colour rather than with a line per level.
+   *
+   * A palette with a ramp interpolates it. A palette with a single ink shades
+   * that ink instead, from a wash of it low down to full strength high up —
+   * because seven of the eleven presets are a single ink, and without this they
+   * would each give a picture of one flat colour that says nothing about the
+   * ground. The wash is mixed towards the palette's own background rather than
+   * towards white, which is what keeps it working on the dark presets: on Noir
+   * the low ground fades into the black paper, not out of it.
+   */
+  function inkAt(palette, t) {
+    var u = t < 0 ? 0 : t > 1 ? 1 : t;
+
+    if (palette.ramp && palette.ramp.length >= 2) return alongStops(palette.ramp, u);
+    if (palette.ramp && palette.ramp.length === 1) return palette.ramp[0];
+
+    var ink = palette.ink || [0, 0, 0];
+    var paper = palette.background || [255, 255, 255];
+    return blend(paper, ink, MIN_TONE + (1 - MIN_TONE) * u);
   }
 
   /**
@@ -2493,6 +2584,8 @@ footer a { color: inherit; }
     get: get,
     isIndex: isIndex,
     inkFor: inkFor,
+    inkAt: inkAt,
+    MIN_TONE: MIN_TONE,
     widthFor: widthFor,
     css: css,
     parse: parse,
@@ -3048,6 +3141,17 @@ footer a { color: inherit; }
    */
   var ADVANCE = 0.6;
 
+  /*
+   * The words the block design repeats, and what goes between them.
+   *
+   * The separator earns its place: the words run on across the ends of rows so
+   * that every cell is filled, and with nothing between them a block reads
+   * RIDGESUMMITSCREE.
+   */
+  var WORDS = 'RIDGE, SUMMIT, SCREE, CRAG, COL, SPUR, GULLY, CIRQUE, TARN, ' +
+    'MORAINE, SADDLE, MASSIF';
+  var SEPARATOR = '·';
+
   /**
    * The ramp control, parsed.
    *
@@ -3058,6 +3162,51 @@ footer a { color: inherit; }
   function ramp(text) {
     var chars = Array.from(String(text === undefined || text === null ? '' : text));
     return chars.length ? chars : Array.from(RAMP);
+  }
+
+  /**
+   * The word list, parsed.
+   *
+   * Commas and newlines both separate, so a list can be typed either way round
+   * without being told which. Spaces do not, so a name of two words stays one
+   * entry and is never broken in the middle by the separator.
+   */
+  function words(text) {
+    var list = String(text === undefined || text === null ? '' : text)
+      .split(/[,\n]/)
+      .map(function (word) { return word.trim(); })
+      .filter(function (word) { return word.length > 0; });
+
+    return list.length ? list : words(WORDS);
+  }
+
+  /**
+   * Exactly `count` characters of the word list, repeated with the separator
+   * between.
+   *
+   * Row boundaries are not consulted. The caller lays these out left to right
+   * and top to bottom, so a word runs off the end of one row and continues on
+   * the next — which is what makes the block solid, with no ragged edge and no
+   * cell left empty.
+   *
+   * Words are non-empty by the time they get here, so the loop always advances
+   * even when the separator is blank.
+   */
+  function stream(list, separator, count) {
+    var want = Math.max(0, count | 0);
+    var sep = Array.from(String(separator === undefined || separator === null
+      ? SEPARATOR : separator));
+    var out = [];
+    var i = 0;
+
+    while (out.length < want) {
+      var word = Array.from(list[i % list.length]);
+      for (var k = 0; k < word.length && out.length < want; k++) out.push(word[k]);
+      for (var s = 0; s < sep.length && out.length < want; s++) out.push(sep[s]);
+      i++;
+    }
+
+    return out;
   }
 
   /**
@@ -3160,7 +3309,11 @@ footer a { color: inherit; }
   Topo.ascii = {
     RAMP: RAMP,
     ADVANCE: ADVANCE,
+    WORDS: WORDS,
+    SEPARATOR: SEPARATOR,
     ramp: ramp,
+    words: words,
+    stream: stream,
     rowsFor: rowsFor,
     cells: cells,
     indices: indices
@@ -3812,48 +3965,126 @@ footer a { color: inherit; }
    * and cheaper than the bookkeeping of another cache stage. That is what keeps
    * every ASCII control on the repaint path.
    */
+  /*
+   * How many shades of height a colour-carried design uses.
+   *
+   * Fine enough that a hillside reads as a gradient rather than as terraces,
+   * coarse enough that the colours can be worked out once and turned into
+   * strings the canvas takes directly. It must stay at or under 256: the tone
+   * per cell is kept in a Uint8Array, which would silently wrap above that.
+   */
+  var TONES = 96;
+
+  /**
+   * The measurements every grid-of-characters picture shares: where the block
+   * sits, how it divides into cells, and how big a character has to be.
+   *
+   * The row count comes from the advance ratio at a large size, not at the size
+   * the characters will be drawn at. That is deliberate: it is the *shape of
+   * the face* the rows have to answer to, and the large-size ratio is the
+   * honest measure of that, uncontaminated by the pixel rounding that inflates
+   * it at small sizes. Using the drawing size here would quietly change how
+   * many rows a picture has when it was exported at four times the scale.
+   */
+  function cellFrame(width, height, options) {
+    var area = frame(width, height, options.margin);
+    var cols = Math.max(1, Math.round(options.cols || 100));
+    var rows = Topo.ascii.rowsFor(cols, area, advanceRatio(100));
+    var cell = area.w / cols;
+
+    return {
+      area: area,
+      cols: cols,
+      rows: rows,
+      cellWidth: cell,
+      cellHeight: area.h / rows,
+      fontSize: sizeForCell(cell)
+    };
+  }
+
+  /**
+   * Colours as the canvas wants them.
+   *
+   * Built up front, one string per step, for two reasons. It keeps the drawing
+   * loop from building a string per cell — tens of thousands of them a frame —
+   * and it lets that loop decide whether the colour has actually changed by
+   * comparing what it is about to set. A single-ink palette yields the same
+   * string at every step, so it sets the fill once for the whole picture.
+   */
+  function toneStrings(palette, steps, continuous) {
+    var out = [];
+    for (var i = 0; i < steps; i++) {
+      var t = steps > 1 ? i / (steps - 1) : 0;
+      out.push(Topo.palettes.css(continuous
+        ? Topo.palettes.inkAt(palette, t)
+        : Topo.palettes.inkFor(palette, i, steps)));
+    }
+    return out;
+  }
+
   function asciiGeometry(grid, palette, width, height, options) {
     options = options || {};
 
     var ascii = Topo.ascii;
-    var area = frame(width, height, options.margin);
     var chars = ascii.ramp(options.ramp);
     if (options.invert) chars = chars.slice().reverse();
 
-    var cols = Math.max(1, Math.round(options.cols || 100));
-    var cell = area.w / cols;
-
-    /*
-     * The row count comes from the ratio at a large size, not at the size the
-     * characters will be drawn at. That is deliberate: it is the *shape of the
-     * face* the rows have to answer to, and the large-size ratio is the honest
-     * measure of that, uncontaminated by the pixel rounding that inflates it at
-     * small sizes. Using the drawing size here would quietly change how many
-     * rows a picture has when it was exported at four times the scale.
-     */
-    var rows = ascii.rowsFor(cols, area, advanceRatio(100));
-    var fontSize = sizeForCell(cell);
-
-    var colours = [];
-    for (var i = 0; i < chars.length; i++) {
-      colours.push(Topo.palettes.inkFor(palette, i, chars.length));
-    }
+    var shape = cellFrame(width, height, options);
+    var cells = ascii.cells(grid, shape.cols, shape.rows, chars.length);
 
     return {
       kind: 'ascii',
       width: width,
       height: height,
       background: options.transparent ? null : (palette.background || null),
-      area: area,
-      cols: cols,
-      rows: rows,
-      cellWidth: cell,
-      cellHeight: area.h / rows,
-      fontSize: fontSize,
+      area: shape.area,
+      cols: shape.cols,
+      rows: shape.rows,
+      cellWidth: shape.cellWidth,
+      cellHeight: shape.cellHeight,
+      fontSize: shape.fontSize,
       weight: options.weight || 400,
       chars: chars,
-      colours: colours,
-      cells: ascii.cells(grid, cols, rows, chars.length)
+      // The ramp step doubles as the tone: the character and its colour say the
+      // same thing about the ground here.
+      tint: cells.index,
+      css: toneStrings(palette, chars.length, false),
+      cells: cells
+    };
+  }
+
+  /**
+   * A solid block of repeated words, coloured by height.
+   *
+   * The other way round from the ASCII design: there the character carries the
+   * ground and the colour is decoration; here the words are the same wherever
+   * you look and the colour is the only thing that knows where the mountain is.
+   * Which is why the tones are continuous and taken from inkAt — a palette with
+   * a single ink shades that ink rather than giving one flat colour.
+   */
+  function wordsGeometry(grid, palette, width, height, options) {
+    options = options || {};
+
+    var ascii = Topo.ascii;
+    var shape = cellFrame(width, height, options);
+    var list = ascii.words(options.words);
+    if (options.caps) list = list.map(function (word) { return word.toUpperCase(); });
+
+    return {
+      kind: 'words',
+      width: width,
+      height: height,
+      background: options.transparent ? null : (palette.background || null),
+      area: shape.area,
+      cols: shape.cols,
+      rows: shape.rows,
+      cellWidth: shape.cellWidth,
+      cellHeight: shape.cellHeight,
+      fontSize: shape.fontSize,
+      weight: options.weight || 400,
+      text: ascii.stream(list, options.separator, shape.cols * shape.rows),
+      tint: ascii.cells(grid, shape.cols, shape.rows, TONES).index,
+      css: toneStrings(palette, TONES, true)
     };
   }
 
@@ -3871,8 +4102,7 @@ footer a { color: inherit; }
    * characters with different widths — which most ramps are, once a browser has
    * rounded them — still reads as a straight column.
    */
-  function drawAscii(ctx, spec) {
-    var index = spec.cells.index;
+  function drawCells(ctx, spec, charAt) {
     var half = spec.cellWidth / 2;
     var colour = null;
     var drawn = 0;
@@ -3886,17 +4116,19 @@ footer a { color: inherit; }
       var row = r * spec.cols;
 
       for (var c = 0; c < spec.cols; c++) {
-        var step = index[row + c];
-        var want = spec.colours[step];
+        var i = row + c;
+        var want = spec.css[spec.tint[i]];
 
-        // Set only on a change: a solid palette hands back the same array for
-        // every step, so that is one assignment for the whole picture.
+        // Set only on a change. Compared by what is about to be set rather than
+        // by the tone number, so a single-ink palette — whose every tone is the
+        // same string — assigns the fill once for the whole picture, while a
+        // graded one pays only where the colour really moves.
         if (want !== colour) {
           colour = want;
-          ctx.fillStyle = Topo.palettes.css(colour);
+          ctx.fillStyle = want;
         }
 
-        ctx.fillText(spec.chars[step], spec.area.x + c * spec.cellWidth + half, y);
+        ctx.fillText(charAt(i), spec.area.x + c * spec.cellWidth + half, y);
         drawn++;
       }
     }
@@ -4020,8 +4252,14 @@ footer a { color: inherit; }
      * background, the one scale that turns design units into pixels, and the
      * count they report back — and part company only over what goes on top.
      */
-    if (spec.kind === 'ascii') {
-      glyphs = drawAscii(ctx, spec);
+    if (spec.kind === 'ascii' || spec.kind === 'words') {
+      // The two grids of characters differ only in where the character comes
+      // from: a ramp step chosen by the height, or the next letter of the words
+      // running through the block.
+      glyphs = drawCells(ctx, spec, spec.kind === 'ascii'
+        ? function (i) { return spec.chars[spec.tint[i]]; }
+        : function (i) { return spec.text[i]; });
+
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       spec.glyphs = glyphs;
       spec.clipped = false;
@@ -4149,7 +4387,9 @@ footer a { color: inherit; }
     layers: layers,
     geometry: geometry,
     asciiGeometry: asciiGeometry,
+    wordsGeometry: wordsGeometry,
     advanceRatio: advanceRatio,
+    TONES: TONES,
     isRing: isRing,
     draw: draw,
     trace: trace,
@@ -4203,8 +4443,9 @@ footer a { color: inherit; }
   var MIN_SIDE = 200;
 
   var state = {
-    /* Which picture this is. 'contours' draws lines between heights;
-     * 'ascii' draws the heights themselves as characters. The two share the
+    /* Which picture this is. 'contours' draws lines between heights; 'ascii'
+     * draws the heights themselves as characters; 'words' fills the frame with
+     * words and lets their colour carry the height. All three share the
      * elevation grid, the colours, the picture size and the download — only
      * what is made of the ground differs. */
     design: 'contours',
@@ -4256,6 +4497,14 @@ footer a { color: inherit; }
     asciiRamp: Topo.ascii.RAMP,
     asciiInvert: false,
     asciiWeight: 500,
+
+    /* The word block. Same grid as the ASCII design, but the words are the
+     * same everywhere and the colour is the only thing carrying the ground. */
+    wordCols: 90,
+    wordList: Topo.ascii.WORDS,
+    wordSeparator: Topo.ascii.SEPARATOR,
+    wordCaps: true,
+    wordWeight: 500,
 
     scale: 1,
     filename: ''
@@ -4352,9 +4601,18 @@ footer a { color: inherit; }
     return fontReady;
   }
 
-  function isAscii() {
-    return state.design === 'ascii';
-  }
+  function isContours() { return state.design === 'contours'; }
+  function isAscii() { return state.design === 'ascii'; }
+  function isWords() { return state.design === 'words'; }
+
+  /**
+   * Is this a grid of characters?
+   *
+   * Most of the branching in this file wants this question rather than which
+   * design exactly: both grids are made straight from the elevation, need no
+   * trace, need the lettering face, and count what they drew the same way.
+   */
+  function usesCells() { return isAscii() || isWords(); }
 
   /** The ASCII design's settings, for the preview and the download alike. */
   function asciiOptions() {
@@ -4363,6 +4621,22 @@ footer a { color: inherit; }
       ramp: state.asciiRamp,
       invert: state.asciiInvert,
       weight: state.asciiWeight,
+      margin: state.margin,
+      transparent: state.transparent
+    };
+  }
+
+  /** The word block's settings — one helper, so preview and PNG agree. */
+  function wordOptions() {
+    return {
+      cols: state.wordCols,
+      // {place} resolved here so a list can name the mountain it is drawing.
+      words: ascii.words(state.wordList).map(function (word) {
+        return textpath.resolve(word, { place: state.place });
+      }).join('\n'),
+      separator: state.wordSeparator,
+      caps: state.wordCaps,
+      weight: state.wordWeight,
       margin: state.margin,
       transparent: state.transparent
     };
@@ -4416,7 +4690,7 @@ footer a { color: inherit; }
        * ASCII design asks the palette for a colour per ramp step, and an index
        * rule applied to those steps would tint every nth one — banding across
        * the map that nothing on screen would explain. So it is off there. */
-      every: isAscii() ? 0 : state.indexEvery,
+      every: isContours() ? state.indexEvery : 0,
       width: state.indexWidth,
       ink: state.indexTint ? palettes.parse(state.indexInk) : null
     };
@@ -4465,7 +4739,7 @@ footer a { color: inherit; }
   }
 
   function stats() {
-    if (!cache.grid || (!isAscii() && !cache.result)) {
+    if (!cache.grid || (isContours() && !cache.result)) {
       $('stats').textContent = '';
       return;
     }
@@ -4477,10 +4751,10 @@ footer a { color: inherit; }
     // design; what sits between them is what each one made of it.
     $('stats').textContent = [
       Math.round(cache.grid.min) + '–' + Math.round(cache.grid.max) + ' m',
-      isAscii()
-        ? (shape && shape.kind === 'ascii' ? shape.cols + ' × ' + shape.rows + ' characters' : '')
+      usesCells()
+        ? (shape && shape.cols ? shape.cols + ' × ' + shape.rows + ' characters' : '')
         : (result.interval ? Math.round(result.interval) + ' m between lines' : ''),
-      isAscii() ? '' : result.pathCount + ' paths',
+      usesCells() ? '' : result.pathCount + ' paths',
       Math.round(plan.metresPerSample) + ' m/sample at zoom ' + plan.zoom
     ].filter(Boolean).join(' · ');
   }
@@ -4527,7 +4801,7 @@ footer a { color: inherit; }
       // The fetch owns the first half of the bar when a trace follows it, and
       // the whole of it when nothing does — otherwise the ASCII design's bar
       // would stop at the middle and vanish.
-      var share = isAscii() ? 1 : 0.5;
+      var share = isContours() ? 0.5 : 1;
 
       terrain = elevation.fetchGrid(plan, {
         signal: terrainAbort.signal,
@@ -4556,7 +4830,7 @@ footer a { color: inherit; }
          * between — but it is a perfectly good picture in characters, so that
          * refusal belongs to the contour branch rather than to both.
          */
-        if (isAscii()) return grid;
+        if (usesCells()) return grid;
 
         if (!(grid.max > grid.min)) {
           throw new Error('That area is flat — every sample reads ' +
@@ -4593,7 +4867,7 @@ footer a { color: inherit; }
         paint();
         stats();
         status(describe(), false);
-        if (isAscii()) syncAsciiRamp();
+        if (usesCells()) syncCellNotes();
         progress(null);
       })
       .catch(function (err) {
@@ -4612,9 +4886,9 @@ footer a { color: inherit; }
 
   function describe() {
     var size = exportSize();
-    var made = isAscii()
-      ? state.asciiCols + ' characters across'
-      : state.levels + ' lines';
+    var made = isAscii() ? state.asciiCols + ' characters across'
+      : isWords() ? state.wordCols + ' characters across'
+        : state.levels + ' lines';
     var line = state.place + ' · ' + fmtDistance(state.widthM) + ' across · ' +
       made + ' · ' + size.width + ' × ' + size.height + ' px';
 
@@ -4632,22 +4906,38 @@ footer a { color: inherit; }
   /* ---------------------------------------------------------------- painting */
 
   /**
+   * The whole picture at a given size, whichever design is on.
+   *
+   * One place decides this, and both the preview and the download come through
+   * it — a difference between the two would only ever show up in a saved PNG.
+   * `traced` is the contour geometry the download re-traced at its own size;
+   * the preview passes nothing and the cached trace is used.
+   */
+  function specFor(width, height, traced) {
+    if (isAscii()) {
+      return render.asciiGeometry(cache.grid, palette(), width, height, asciiOptions());
+    }
+    if (isWords()) {
+      return render.wordsGeometry(cache.grid, palette(), width, height, wordOptions());
+    }
+    return render.geometry(traced || cache.result, palette(), width, height, {
+      weight: state.weight,
+      transparent: state.transparent,
+      text: textOptions()
+    });
+  }
+
+  /**
    * Repaint from cached geometry. This is the cheap path: colours, thickness
    * and index settings all end here without touching the network or the tracer.
    */
   function paint() {
-    // The two designs need different things to exist: characters need only the
-    // ground, lines need the trace made from it.
-    if (isAscii() ? !cache.grid : !cache.result) return;
+    // The designs need different things to exist: a grid of characters needs
+    // only the ground, lines need the trace made from it.
+    if (isContours() ? !cache.result : !cache.grid) return;
 
     var design = designFrame();
-    var spec = isAscii()
-      ? render.asciiGeometry(cache.grid, palette(), design.width, design.height, asciiOptions())
-      : render.geometry(cache.result, palette(), design.width, design.height, {
-        weight: state.weight,
-        transparent: state.transparent,
-        text: textOptions()
-      });
+    var spec = specFor(design.width, design.height);
     cache.geometry = spec;
 
     var canvas = $('view');
@@ -4667,11 +4957,11 @@ footer a { color: inherit; }
     render.draw(canvas, spec);
 
     // Drawn once in whatever face was to hand, then again properly. Only ever
-    // one repeat: fontLoaded is set before this can run a second time. The
-    // ASCII design needs this as much as the lettering does — more, even, since
-    // its column positions come from the face's advance, and a fallback with a
-    // different one would misalign every column in the picture.
-    if ((spec.text || spec.kind === 'ascii') && !fontLoaded) ensureFont().then(paint);
+    // one repeat: fontLoaded is set before this can run a second time. A grid
+    // of characters needs this as much as the lettering does — more, even,
+    // since its column positions come from the face's advance, and a fallback
+    // with a different one would misalign every column in the picture.
+    if ((spec.text || spec.kind !== 'contour') && !fontLoaded) ensureFont().then(paint);
   }
 
   /* ----------------------------------------------------------------- export */
@@ -4708,10 +4998,11 @@ footer a { color: inherit; }
      * The re-trace exists because vertex spacing is in output units, so an
      * enlarged preview would show its facets. A character grid has no such
      * problem: the columns are the same columns, only bigger, because the cell
-     * width and the size that fills it both come from the output frame. So the
-     * ASCII download is the preview enlarged, exactly, for no CPU at all.
+     * width and the size that fills it both come from the output frame. So a
+     * grid of characters downloads as the preview enlarged, exactly, for no
+     * CPU at all.
      */
-    var made = isAscii()
+    var made = usesCells()
       ? Promise.resolve(null)
       : render.trace(cache.grid, frame, {
         levels: state.levels,
@@ -4728,13 +5019,7 @@ footer a { color: inherit; }
       })
       .then(function (result) {
         var canvas = render.offscreen(size.width, size.height);
-        render.draw(canvas, isAscii()
-          ? render.asciiGeometry(cache.grid, palette(), size.width, size.height, asciiOptions())
-          : render.geometry(result, palette(), size.width, size.height, {
-            weight: state.weight,
-            transparent: state.transparent,
-            text: textOptions()
-          }));
+        render.draw(canvas, specFor(size.width, size.height, result));
         var name = $('filename').value.trim() || defaultFilename();
         if (!/\.png$/i.test(name)) name += '.png';
         return render.toPng(canvas, name);
@@ -4861,10 +5146,14 @@ footer a { color: inherit; }
 
   function repaint() {
     paint();
+    // The readout describes what was just drawn, so it is refreshed here as
+    // well as after a run: switching design is a repaint, and without this the
+    // panel would go on quoting the contour spacing under a block of words.
+    stats();
     status(describe(), false);
     // The derived row count is only known once a spec exists, so the note that
     // reports it is refreshed wherever one is made.
-    if (isAscii()) syncAsciiRamp();
+    if (usesCells()) syncCellNotes();
   }
 
   var ASPECTS = [
@@ -5004,44 +5293,53 @@ footer a { color: inherit; }
    * page to scroll past.
    */
   function syncDesign() {
-    var ascii = isAscii();
+    // Not named `ascii`: that is the module at the top of this file, and
+    // shadowing it here would hide it from everything below.
+    var lines = isContours();
 
-    $('ascii-section').hidden = !ascii;
-    $('contour-terrain').hidden = ascii;
-    $('contour-tidy').hidden = ascii;
-    $('contour-colour').hidden = ascii;
-    $('text-section').hidden = ascii;
+    $('ascii-section').hidden = !isAscii();
+    $('words-section').hidden = !isWords();
+    $('contour-terrain').hidden = !lines;
+    $('contour-tidy').hidden = !lines;
+    $('contour-colour').hidden = !lines;
+    $('text-section').hidden = !lines;
 
-    // Why a big download is worth having differs between the two, and the
-    // contour answer is not true of characters — nothing is traced again.
-    $('download-note').textContent = ascii
-      ? 'The same characters, drawn larger — the grid does not change with the ' +
-        'size, so a 4× file is the picture at 4× and not a different one.'
-      : 'The contours are traced again at the full size, so a 4× file is ' +
-        'genuinely sharper rather than an enlargement.';
+    // Why a big download is worth having differs, and the contour answer is not
+    // true of characters — nothing is traced again.
+    $('download-note').textContent = lines
+      ? 'The contours are traced again at the full size, so a 4× file is ' +
+        'genuinely sharper rather than an enlargement.'
+      : 'The same characters, drawn larger — the grid does not change with the ' +
+        'size, so a 4× file is the picture at 4× and not a different one.';
 
     Array.prototype.forEach.call(doc.getElementsByName('design'), function (radio) {
       radio.checked = radio.value === state.design;
     });
 
-    syncAsciiRamp();
+    syncCellNotes();
   }
 
   /**
-   * What the ramp box and the grid note currently say.
+   * What the two character panels report back.
    *
-   * The step count is worth showing because it is not a setting anywhere — it
-   * is however many characters were typed — and the row count because it is
-   * derived, so the only way to know what the picture will be is to be told.
+   * The ramp's step count and the word count are worth showing because neither
+   * is a setting anywhere — each is however much was typed — and the grid size
+   * because it is derived, so being told is the only way to know what the
+   * picture will be.
    */
-  function syncAsciiRamp() {
+  function syncCellNotes() {
     var steps = ascii.ramp(state.asciiRamp).length;
     $('ascii-steps-val').textContent = steps + (steps === 1 ? ' step' : ' steps');
 
+    var count = ascii.words(state.wordList).length;
+    $('words-count-val').textContent = count + (count === 1 ? ' word' : ' words');
+
     var shape = cache.geometry;
-    $('ascii-grid-note').textContent = shape && shape.kind === 'ascii'
+    var size = shape && (shape.kind === 'ascii' || shape.kind === 'words')
       ? 'Currently ' + shape.cols + ' × ' + shape.rows + '.'
       : '';
+    $('ascii-grid-note').textContent = shape && shape.kind === 'ascii' ? size : '';
+    $('words-grid-note').textContent = shape && shape.kind === 'words' ? size : '';
   }
 
   /* ------------------------------------------------------------------- text */
@@ -5203,7 +5501,7 @@ footer a { color: inherit; }
          * with no trace yet, which paint() declines to draw and run() then
          * supplies.
          */
-        if (!isAscii() && !cache.result) { schedule(); return; }
+        if (isContours() && !cache.result) { schedule(); return; }
         repaint();
       });
     });
@@ -5219,7 +5517,7 @@ footer a { color: inherit; }
     var rampDebounce = null;
     $('ascii-ramp').addEventListener('input', function () {
       state.asciiRamp = $('ascii-ramp').value;
-      syncAsciiRamp();
+      syncCellNotes();
       clearTimeout(rampDebounce);
       rampDebounce = setTimeout(repaint, 150);
     });
@@ -5232,6 +5530,44 @@ footer a { color: inherit; }
     $('ascii-weight').addEventListener('input', function () {
       state.asciiWeight = parseInt($('ascii-weight').value, 10);
       $('ascii-weight-val').textContent = state.asciiWeight;
+      repaint();
+    });
+
+    /* ----------------------------------------------------------- word block */
+
+    $('word-cols').addEventListener('input', function () {
+      state.wordCols = parseInt($('word-cols').value, 10);
+      $('word-cols-val').textContent = state.wordCols;
+      repaint();
+    });
+
+    // Rebuilding the block on every keystroke would relay every letter on the
+    // map, so the words and the separator both wait for a pause.
+    var wordDebounce = null;
+    function typedWords() {
+      syncCellNotes();
+      clearTimeout(wordDebounce);
+      wordDebounce = setTimeout(repaint, 150);
+    }
+
+    $('word-list').addEventListener('input', function () {
+      state.wordList = $('word-list').value;
+      typedWords();
+    });
+
+    $('word-separator').addEventListener('input', function () {
+      state.wordSeparator = $('word-separator').value;
+      typedWords();
+    });
+
+    $('word-caps').addEventListener('change', function () {
+      state.wordCaps = $('word-caps').checked;
+      repaint();
+    });
+
+    $('word-weight').addEventListener('input', function () {
+      state.wordWeight = parseInt($('word-weight').value, 10);
+      $('word-weight-val').textContent = state.wordWeight;
       repaint();
     });
 
@@ -5355,6 +5691,14 @@ footer a { color: inherit; }
     $('ascii-invert').checked = state.asciiInvert;
     $('ascii-weight').value = state.asciiWeight;
     $('ascii-weight-val').textContent = state.asciiWeight;
+
+    $('word-cols').value = state.wordCols;
+    $('word-cols-val').textContent = state.wordCols;
+    $('word-list').value = state.wordList;
+    $('word-separator').value = state.wordSeparator;
+    $('word-caps').checked = state.wordCaps;
+    $('word-weight').value = state.wordWeight;
+    $('word-weight-val').textContent = state.wordWeight;
     syncDesign();
 
     $('custom-toggle').setAttribute('aria-pressed', String(state.custom));
@@ -5421,7 +5765,10 @@ footer a { color: inherit; }
     },
     render: rerun,
     download: download,
-    geometry: function () { return cache.geometry; }
+    geometry: function () { return cache.geometry; },
+    // The elevation the picture was made from, for a script that wants to
+    // check the picture against the ground rather than take it on trust.
+    grid: function () { return cache.grid; }
   };
 
   /** Run now rather than after the debounce — what a script wants to await. */

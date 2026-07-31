@@ -41,8 +41,9 @@
   var MIN_SIDE = 200;
 
   var state = {
-    /* Which picture this is. 'contours' draws lines between heights;
-     * 'ascii' draws the heights themselves as characters. The two share the
+    /* Which picture this is. 'contours' draws lines between heights; 'ascii'
+     * draws the heights themselves as characters; 'words' fills the frame with
+     * words and lets their colour carry the height. All three share the
      * elevation grid, the colours, the picture size and the download — only
      * what is made of the ground differs. */
     design: 'contours',
@@ -94,6 +95,14 @@
     asciiRamp: Topo.ascii.RAMP,
     asciiInvert: false,
     asciiWeight: 500,
+
+    /* The word block. Same grid as the ASCII design, but the words are the
+     * same everywhere and the colour is the only thing carrying the ground. */
+    wordCols: 90,
+    wordList: Topo.ascii.WORDS,
+    wordSeparator: Topo.ascii.SEPARATOR,
+    wordCaps: true,
+    wordWeight: 500,
 
     scale: 1,
     filename: ''
@@ -190,9 +199,18 @@
     return fontReady;
   }
 
-  function isAscii() {
-    return state.design === 'ascii';
-  }
+  function isContours() { return state.design === 'contours'; }
+  function isAscii() { return state.design === 'ascii'; }
+  function isWords() { return state.design === 'words'; }
+
+  /**
+   * Is this a grid of characters?
+   *
+   * Most of the branching in this file wants this question rather than which
+   * design exactly: both grids are made straight from the elevation, need no
+   * trace, need the lettering face, and count what they drew the same way.
+   */
+  function usesCells() { return isAscii() || isWords(); }
 
   /** The ASCII design's settings, for the preview and the download alike. */
   function asciiOptions() {
@@ -201,6 +219,22 @@
       ramp: state.asciiRamp,
       invert: state.asciiInvert,
       weight: state.asciiWeight,
+      margin: state.margin,
+      transparent: state.transparent
+    };
+  }
+
+  /** The word block's settings — one helper, so preview and PNG agree. */
+  function wordOptions() {
+    return {
+      cols: state.wordCols,
+      // {place} resolved here so a list can name the mountain it is drawing.
+      words: ascii.words(state.wordList).map(function (word) {
+        return textpath.resolve(word, { place: state.place });
+      }).join('\n'),
+      separator: state.wordSeparator,
+      caps: state.wordCaps,
+      weight: state.wordWeight,
       margin: state.margin,
       transparent: state.transparent
     };
@@ -254,7 +288,7 @@
        * ASCII design asks the palette for a colour per ramp step, and an index
        * rule applied to those steps would tint every nth one — banding across
        * the map that nothing on screen would explain. So it is off there. */
-      every: isAscii() ? 0 : state.indexEvery,
+      every: isContours() ? state.indexEvery : 0,
       width: state.indexWidth,
       ink: state.indexTint ? palettes.parse(state.indexInk) : null
     };
@@ -303,7 +337,7 @@
   }
 
   function stats() {
-    if (!cache.grid || (!isAscii() && !cache.result)) {
+    if (!cache.grid || (isContours() && !cache.result)) {
       $('stats').textContent = '';
       return;
     }
@@ -315,10 +349,10 @@
     // design; what sits between them is what each one made of it.
     $('stats').textContent = [
       Math.round(cache.grid.min) + '–' + Math.round(cache.grid.max) + ' m',
-      isAscii()
-        ? (shape && shape.kind === 'ascii' ? shape.cols + ' × ' + shape.rows + ' characters' : '')
+      usesCells()
+        ? (shape && shape.cols ? shape.cols + ' × ' + shape.rows + ' characters' : '')
         : (result.interval ? Math.round(result.interval) + ' m between lines' : ''),
-      isAscii() ? '' : result.pathCount + ' paths',
+      usesCells() ? '' : result.pathCount + ' paths',
       Math.round(plan.metresPerSample) + ' m/sample at zoom ' + plan.zoom
     ].filter(Boolean).join(' · ');
   }
@@ -365,7 +399,7 @@
       // The fetch owns the first half of the bar when a trace follows it, and
       // the whole of it when nothing does — otherwise the ASCII design's bar
       // would stop at the middle and vanish.
-      var share = isAscii() ? 1 : 0.5;
+      var share = isContours() ? 0.5 : 1;
 
       terrain = elevation.fetchGrid(plan, {
         signal: terrainAbort.signal,
@@ -394,7 +428,7 @@
          * between — but it is a perfectly good picture in characters, so that
          * refusal belongs to the contour branch rather than to both.
          */
-        if (isAscii()) return grid;
+        if (usesCells()) return grid;
 
         if (!(grid.max > grid.min)) {
           throw new Error('That area is flat — every sample reads ' +
@@ -431,7 +465,7 @@
         paint();
         stats();
         status(describe(), false);
-        if (isAscii()) syncAsciiRamp();
+        if (usesCells()) syncCellNotes();
         progress(null);
       })
       .catch(function (err) {
@@ -450,9 +484,9 @@
 
   function describe() {
     var size = exportSize();
-    var made = isAscii()
-      ? state.asciiCols + ' characters across'
-      : state.levels + ' lines';
+    var made = isAscii() ? state.asciiCols + ' characters across'
+      : isWords() ? state.wordCols + ' characters across'
+        : state.levels + ' lines';
     var line = state.place + ' · ' + fmtDistance(state.widthM) + ' across · ' +
       made + ' · ' + size.width + ' × ' + size.height + ' px';
 
@@ -470,22 +504,38 @@
   /* ---------------------------------------------------------------- painting */
 
   /**
+   * The whole picture at a given size, whichever design is on.
+   *
+   * One place decides this, and both the preview and the download come through
+   * it — a difference between the two would only ever show up in a saved PNG.
+   * `traced` is the contour geometry the download re-traced at its own size;
+   * the preview passes nothing and the cached trace is used.
+   */
+  function specFor(width, height, traced) {
+    if (isAscii()) {
+      return render.asciiGeometry(cache.grid, palette(), width, height, asciiOptions());
+    }
+    if (isWords()) {
+      return render.wordsGeometry(cache.grid, palette(), width, height, wordOptions());
+    }
+    return render.geometry(traced || cache.result, palette(), width, height, {
+      weight: state.weight,
+      transparent: state.transparent,
+      text: textOptions()
+    });
+  }
+
+  /**
    * Repaint from cached geometry. This is the cheap path: colours, thickness
    * and index settings all end here without touching the network or the tracer.
    */
   function paint() {
-    // The two designs need different things to exist: characters need only the
-    // ground, lines need the trace made from it.
-    if (isAscii() ? !cache.grid : !cache.result) return;
+    // The designs need different things to exist: a grid of characters needs
+    // only the ground, lines need the trace made from it.
+    if (isContours() ? !cache.result : !cache.grid) return;
 
     var design = designFrame();
-    var spec = isAscii()
-      ? render.asciiGeometry(cache.grid, palette(), design.width, design.height, asciiOptions())
-      : render.geometry(cache.result, palette(), design.width, design.height, {
-        weight: state.weight,
-        transparent: state.transparent,
-        text: textOptions()
-      });
+    var spec = specFor(design.width, design.height);
     cache.geometry = spec;
 
     var canvas = $('view');
@@ -505,11 +555,11 @@
     render.draw(canvas, spec);
 
     // Drawn once in whatever face was to hand, then again properly. Only ever
-    // one repeat: fontLoaded is set before this can run a second time. The
-    // ASCII design needs this as much as the lettering does — more, even, since
-    // its column positions come from the face's advance, and a fallback with a
-    // different one would misalign every column in the picture.
-    if ((spec.text || spec.kind === 'ascii') && !fontLoaded) ensureFont().then(paint);
+    // one repeat: fontLoaded is set before this can run a second time. A grid
+    // of characters needs this as much as the lettering does — more, even,
+    // since its column positions come from the face's advance, and a fallback
+    // with a different one would misalign every column in the picture.
+    if ((spec.text || spec.kind !== 'contour') && !fontLoaded) ensureFont().then(paint);
   }
 
   /* ----------------------------------------------------------------- export */
@@ -546,10 +596,11 @@
      * The re-trace exists because vertex spacing is in output units, so an
      * enlarged preview would show its facets. A character grid has no such
      * problem: the columns are the same columns, only bigger, because the cell
-     * width and the size that fills it both come from the output frame. So the
-     * ASCII download is the preview enlarged, exactly, for no CPU at all.
+     * width and the size that fills it both come from the output frame. So a
+     * grid of characters downloads as the preview enlarged, exactly, for no
+     * CPU at all.
      */
-    var made = isAscii()
+    var made = usesCells()
       ? Promise.resolve(null)
       : render.trace(cache.grid, frame, {
         levels: state.levels,
@@ -566,13 +617,7 @@
       })
       .then(function (result) {
         var canvas = render.offscreen(size.width, size.height);
-        render.draw(canvas, isAscii()
-          ? render.asciiGeometry(cache.grid, palette(), size.width, size.height, asciiOptions())
-          : render.geometry(result, palette(), size.width, size.height, {
-            weight: state.weight,
-            transparent: state.transparent,
-            text: textOptions()
-          }));
+        render.draw(canvas, specFor(size.width, size.height, result));
         var name = $('filename').value.trim() || defaultFilename();
         if (!/\.png$/i.test(name)) name += '.png';
         return render.toPng(canvas, name);
@@ -699,10 +744,14 @@
 
   function repaint() {
     paint();
+    // The readout describes what was just drawn, so it is refreshed here as
+    // well as after a run: switching design is a repaint, and without this the
+    // panel would go on quoting the contour spacing under a block of words.
+    stats();
     status(describe(), false);
     // The derived row count is only known once a spec exists, so the note that
     // reports it is refreshed wherever one is made.
-    if (isAscii()) syncAsciiRamp();
+    if (usesCells()) syncCellNotes();
   }
 
   var ASPECTS = [
@@ -842,44 +891,53 @@
    * page to scroll past.
    */
   function syncDesign() {
-    var ascii = isAscii();
+    // Not named `ascii`: that is the module at the top of this file, and
+    // shadowing it here would hide it from everything below.
+    var lines = isContours();
 
-    $('ascii-section').hidden = !ascii;
-    $('contour-terrain').hidden = ascii;
-    $('contour-tidy').hidden = ascii;
-    $('contour-colour').hidden = ascii;
-    $('text-section').hidden = ascii;
+    $('ascii-section').hidden = !isAscii();
+    $('words-section').hidden = !isWords();
+    $('contour-terrain').hidden = !lines;
+    $('contour-tidy').hidden = !lines;
+    $('contour-colour').hidden = !lines;
+    $('text-section').hidden = !lines;
 
-    // Why a big download is worth having differs between the two, and the
-    // contour answer is not true of characters — nothing is traced again.
-    $('download-note').textContent = ascii
-      ? 'The same characters, drawn larger — the grid does not change with the ' +
-        'size, so a 4× file is the picture at 4× and not a different one.'
-      : 'The contours are traced again at the full size, so a 4× file is ' +
-        'genuinely sharper rather than an enlargement.';
+    // Why a big download is worth having differs, and the contour answer is not
+    // true of characters — nothing is traced again.
+    $('download-note').textContent = lines
+      ? 'The contours are traced again at the full size, so a 4× file is ' +
+        'genuinely sharper rather than an enlargement.'
+      : 'The same characters, drawn larger — the grid does not change with the ' +
+        'size, so a 4× file is the picture at 4× and not a different one.';
 
     Array.prototype.forEach.call(doc.getElementsByName('design'), function (radio) {
       radio.checked = radio.value === state.design;
     });
 
-    syncAsciiRamp();
+    syncCellNotes();
   }
 
   /**
-   * What the ramp box and the grid note currently say.
+   * What the two character panels report back.
    *
-   * The step count is worth showing because it is not a setting anywhere — it
-   * is however many characters were typed — and the row count because it is
-   * derived, so the only way to know what the picture will be is to be told.
+   * The ramp's step count and the word count are worth showing because neither
+   * is a setting anywhere — each is however much was typed — and the grid size
+   * because it is derived, so being told is the only way to know what the
+   * picture will be.
    */
-  function syncAsciiRamp() {
+  function syncCellNotes() {
     var steps = ascii.ramp(state.asciiRamp).length;
     $('ascii-steps-val').textContent = steps + (steps === 1 ? ' step' : ' steps');
 
+    var count = ascii.words(state.wordList).length;
+    $('words-count-val').textContent = count + (count === 1 ? ' word' : ' words');
+
     var shape = cache.geometry;
-    $('ascii-grid-note').textContent = shape && shape.kind === 'ascii'
+    var size = shape && (shape.kind === 'ascii' || shape.kind === 'words')
       ? 'Currently ' + shape.cols + ' × ' + shape.rows + '.'
       : '';
+    $('ascii-grid-note').textContent = shape && shape.kind === 'ascii' ? size : '';
+    $('words-grid-note').textContent = shape && shape.kind === 'words' ? size : '';
   }
 
   /* ------------------------------------------------------------------- text */
@@ -1041,7 +1099,7 @@
          * with no trace yet, which paint() declines to draw and run() then
          * supplies.
          */
-        if (!isAscii() && !cache.result) { schedule(); return; }
+        if (isContours() && !cache.result) { schedule(); return; }
         repaint();
       });
     });
@@ -1057,7 +1115,7 @@
     var rampDebounce = null;
     $('ascii-ramp').addEventListener('input', function () {
       state.asciiRamp = $('ascii-ramp').value;
-      syncAsciiRamp();
+      syncCellNotes();
       clearTimeout(rampDebounce);
       rampDebounce = setTimeout(repaint, 150);
     });
@@ -1070,6 +1128,44 @@
     $('ascii-weight').addEventListener('input', function () {
       state.asciiWeight = parseInt($('ascii-weight').value, 10);
       $('ascii-weight-val').textContent = state.asciiWeight;
+      repaint();
+    });
+
+    /* ----------------------------------------------------------- word block */
+
+    $('word-cols').addEventListener('input', function () {
+      state.wordCols = parseInt($('word-cols').value, 10);
+      $('word-cols-val').textContent = state.wordCols;
+      repaint();
+    });
+
+    // Rebuilding the block on every keystroke would relay every letter on the
+    // map, so the words and the separator both wait for a pause.
+    var wordDebounce = null;
+    function typedWords() {
+      syncCellNotes();
+      clearTimeout(wordDebounce);
+      wordDebounce = setTimeout(repaint, 150);
+    }
+
+    $('word-list').addEventListener('input', function () {
+      state.wordList = $('word-list').value;
+      typedWords();
+    });
+
+    $('word-separator').addEventListener('input', function () {
+      state.wordSeparator = $('word-separator').value;
+      typedWords();
+    });
+
+    $('word-caps').addEventListener('change', function () {
+      state.wordCaps = $('word-caps').checked;
+      repaint();
+    });
+
+    $('word-weight').addEventListener('input', function () {
+      state.wordWeight = parseInt($('word-weight').value, 10);
+      $('word-weight-val').textContent = state.wordWeight;
       repaint();
     });
 
@@ -1193,6 +1289,14 @@
     $('ascii-invert').checked = state.asciiInvert;
     $('ascii-weight').value = state.asciiWeight;
     $('ascii-weight-val').textContent = state.asciiWeight;
+
+    $('word-cols').value = state.wordCols;
+    $('word-cols-val').textContent = state.wordCols;
+    $('word-list').value = state.wordList;
+    $('word-separator').value = state.wordSeparator;
+    $('word-caps').checked = state.wordCaps;
+    $('word-weight').value = state.wordWeight;
+    $('word-weight-val').textContent = state.wordWeight;
     syncDesign();
 
     $('custom-toggle').setAttribute('aria-pressed', String(state.custom));
@@ -1259,7 +1363,10 @@
     },
     render: rerun,
     download: download,
-    geometry: function () { return cache.geometry; }
+    geometry: function () { return cache.geometry; },
+    // The elevation the picture was made from, for a script that wants to
+    // check the picture against the ground rather than take it on trust.
+    grid: function () { return cache.grid; }
   };
 
   /** Run now rather than after the debounce — what a script wants to await. */
