@@ -103,12 +103,161 @@
     options = options || {};
     var text = options.text || null;
     return {
+      kind: 'contour',
       width: width,
       height: height,
       background: options.transparent ? null : (palette.background || null),
       text: text && text.on ? text : null,
       layers: layers(result, palette, width, options.weight, text ? text.size : 0)
     };
+  }
+
+  /* --------------------------------------------------------------- ascii */
+
+  /**
+   * How wide a character is, as a fraction of its size, in the face the ASCII
+   * design is set in.
+   *
+   * Measured rather than assumed, because a browser that never got Source Code
+   * Pro is laying out in whatever monospace it has instead, and that face's
+   * advance is what decides how big a character has to be to fill its cell.
+   *
+   * The size matters to the answer. Browsers round a glyph's advance to whole
+   * pixels at small sizes, so the ratio is not the constant a monospaced face
+   * suggests: Source Code Pro measures 0.60 at 100px but 0.64 at 8px. Hence the
+   * argument — ask at the size you mean to draw at.
+   */
+  var measurer = null;
+
+  function advanceRatio(size) {
+    var at = size > 0 ? size : 100;
+    if (!measurer) measurer = offscreen(1, 1).getContext('2d');
+    measurer.font = Topo.textpath.font(at, 400);
+    var width = measurer.measureText('M').width / at;
+    return width > 0 ? width : Topo.ascii.ADVANCE;
+  }
+
+  /**
+   * The size at which a character fills a cell this wide.
+   *
+   * Asked at a large size on purpose, which looks like the wrong question —
+   * these characters are drawn at ten or twenty units, where the ratio measures
+   * noticeably wider. Feeding that measurement back seems more honest and is
+   * not: the rounding only happens when a glyph is rasterised, so it depends on
+   * the size in *device pixels*, and this spec is in design units that the
+   * preview and a 4x download scale differently. There is no one size that
+   * satisfies both, and a spec that chased the preview's would quietly change
+   * the picture on export.
+   *
+   * The face's own ratio is the one scale-independent answer, and it lands
+   * within a few per cent of the cell at every scale either of them uses —
+   * measured at 0.97 to 1.04 across the whole column range. Cells are
+   * positioned by arithmetic anyway, so this only decides how snugly the
+   * characters sit, never where they are.
+   */
+  function sizeForCell(cell) {
+    return cell / advanceRatio(100);
+  }
+
+  /**
+   * A whole picture as characters: where the block sits, what is in each cell,
+   * and what colour it is.
+   *
+   * The cell grid is built here rather than cached upstream because it is a
+   * box average over a few hundred thousand samples — well under a millisecond,
+   * and cheaper than the bookkeeping of another cache stage. That is what keeps
+   * every ASCII control on the repaint path.
+   */
+  function asciiGeometry(grid, palette, width, height, options) {
+    options = options || {};
+
+    var ascii = Topo.ascii;
+    var area = frame(width, height, options.margin);
+    var chars = ascii.ramp(options.ramp);
+    if (options.invert) chars = chars.slice().reverse();
+
+    var cols = Math.max(1, Math.round(options.cols || 100));
+    var cell = area.w / cols;
+
+    /*
+     * The row count comes from the ratio at a large size, not at the size the
+     * characters will be drawn at. That is deliberate: it is the *shape of the
+     * face* the rows have to answer to, and the large-size ratio is the honest
+     * measure of that, uncontaminated by the pixel rounding that inflates it at
+     * small sizes. Using the drawing size here would quietly change how many
+     * rows a picture has when it was exported at four times the scale.
+     */
+    var rows = ascii.rowsFor(cols, area, advanceRatio(100));
+    var fontSize = sizeForCell(cell);
+
+    var colours = [];
+    for (var i = 0; i < chars.length; i++) {
+      colours.push(Topo.palettes.inkFor(palette, i, chars.length));
+    }
+
+    return {
+      kind: 'ascii',
+      width: width,
+      height: height,
+      background: options.transparent ? null : (palette.background || null),
+      area: area,
+      cols: cols,
+      rows: rows,
+      cellWidth: cell,
+      cellHeight: area.h / rows,
+      fontSize: fontSize,
+      weight: options.weight || 400,
+      chars: chars,
+      colours: colours,
+      cells: ascii.cells(grid, cols, rows, chars.length)
+    };
+  }
+
+  /**
+   * Paint the character grid.
+   *
+   * Every cell is placed by arithmetic and drawn on its own. Handing a whole
+   * row to one fillText would be faster and is the obvious thing to try with a
+   * monospaced face — but the browser rounds a glyph's advance to whole pixels
+   * at small sizes, so a row of a hundred characters lands several cells wide
+   * of where the grid says it should, and the picture creeps out of its margin.
+   * Positioning each one costs a call and owes the font nothing.
+   *
+   * Centred in the cell rather than hung off its left edge, so a ramp of
+   * characters with different widths — which most ramps are, once a browser has
+   * rounded them — still reads as a straight column.
+   */
+  function drawAscii(ctx, spec) {
+    var index = spec.cells.index;
+    var half = spec.cellWidth / 2;
+    var colour = null;
+    var drawn = 0;
+
+    ctx.font = Topo.textpath.font(spec.fontSize, spec.weight);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    for (var r = 0; r < spec.rows; r++) {
+      var y = spec.area.y + (r + 0.5) * spec.cellHeight;
+      var row = r * spec.cols;
+
+      for (var c = 0; c < spec.cols; c++) {
+        var step = index[row + c];
+        var want = spec.colours[step];
+
+        // Set only on a change: a solid palette hands back the same array for
+        // every step, so that is one assignment for the whole picture.
+        if (want !== colour) {
+          colour = want;
+          ctx.fillStyle = Topo.palettes.css(colour);
+        }
+
+        ctx.fillText(spec.chars[step], spec.area.x + c * spec.cellWidth + half, y);
+        drawn++;
+      }
+    }
+
+    return drawn;
   }
 
   /**
@@ -219,6 +368,22 @@
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
+    var glyphs = 0;
+    var clipped = false;
+
+    /*
+     * The two designs share the canvas work either side of this — clearing, the
+     * background, the one scale that turns design units into pixels, and the
+     * count they report back — and part company only over what goes on top.
+     */
+    if (spec.kind === 'ascii') {
+      glyphs = drawAscii(ctx, spec);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      spec.glyphs = glyphs;
+      spec.clipped = false;
+      return canvas;
+    }
+
     if (stroke) {
       spec.layers.forEach(function (layer) {
         ctx.strokeStyle = Topo.palettes.css(layer.colour);
@@ -232,9 +397,6 @@
         ctx.stroke();
       });
     }
-
-    var glyphs = 0;
-    var clipped = false;
 
     if (text) {
       /*
@@ -342,6 +504,8 @@
     frame: frame,
     layers: layers,
     geometry: geometry,
+    asciiGeometry: asciiGeometry,
+    advanceRatio: advanceRatio,
     isRing: isRing,
     draw: draw,
     trace: trace,

@@ -1003,6 +1003,16 @@ textarea {
   line-height: 1.6;
 }
 
+/* The character ramp. Set in the face the picture is drawn in, and spaced out,
+ * because the whole point of the control is comparing how much ink each
+ * character puts down — and a trailing space is a legal entry that would be
+ * invisible without room around it. */
+input.lettered {
+  font-family: var(--lettering);
+  font-size: 15px;
+  letter-spacing: .28em;
+}
+
 input[type=range] { width: 100%; accent-color: var(--accent); }
 
 input[type=color] {
@@ -1186,6 +1196,16 @@ footer a { color: inherit; }
   <div class="controls">
 
     <section class="panel">
+      <h2>Design</h2>
+      <div class="modes">
+        <label><input type="radio" name="design" value="contours" checked> Contour lines</label>
+        <label><input type="radio" name="design" value="ascii"> ASCII art</label>
+      </div>
+      <p class="hint" id="design-hint">Lines drawn between heights, or the heights
+        themselves set as characters.</p>
+    </section>
+
+    <section class="panel">
       <h2>Where</h2>
       <div class="row">
         <input type="search" id="q" placeholder="Mount Rainier, Snowdon, Yosemite…"
@@ -1224,10 +1244,12 @@ footer a { color: inherit; }
         <input type="range" id="width" min="0" max="1000" step="1" value="530">
       </label>
 
-      <label class="field">
-        <span class="label">Contour lines <span class="value" id="levels-val">20</span></span>
-        <input type="range" id="levels" min="5" max="60" step="1" value="20">
-      </label>
+      <div id="contour-terrain">
+        <label class="field">
+          <span class="label">Contour lines <span class="value" id="levels-val">20</span></span>
+          <input type="range" id="levels" min="5" max="60" step="1" value="20">
+        </label>
+      </div>
 
       <label class="field">
         <span class="label">Terrain detail</span>
@@ -1238,10 +1260,43 @@ footer a { color: inherit; }
         </select>
       </label>
 
+      <div id="contour-tidy">
+        <label class="check">
+          <input type="checkbox" id="tidy">
+          <span><b>Tidy up tiny loops</b>
+            <span class="hint">Drops the specks the elevation data throws up.</span></span>
+        </label>
+      </div>
+    </section>
+
+    <section class="panel" id="ascii-section" hidden>
+      <h2>Characters</h2>
+
+      <label class="field">
+        <span class="label">Across the picture <span class="value" id="ascii-cols-val">110</span></span>
+        <input type="range" id="ascii-cols" min="20" max="240" step="1" value="110">
+      </label>
+      <p class="hint">The rows follow, so the ground keeps its shape.
+        <span id="ascii-grid-note"></span></p>
+
+      <div class="field">
+        <span class="label">Ramp <span class="value" id="ascii-steps-val">9 steps</span></span>
+        <input type="text" id="ascii-ramp" class="lettered" spellcheck="false"
+               autocomplete="off" autocapitalize="off" aria-describedby="ascii-ramp-hint">
+        <p class="hint" id="ascii-ramp-hint">Low ground first. However many characters you
+          type is how many steps of height there are — end it with a space to let the
+          summits fade out.</p>
+      </div>
+
       <label class="check">
-        <input type="checkbox" id="tidy">
-        <span><b>Tidy up tiny loops</b>
-          <span class="hint">Drops the specks the elevation data throws up.</span></span>
+        <input type="checkbox" id="ascii-invert">
+        <span><b>Densest on high ground</b>
+          <span class="hint">Turns the ramp round.</span></span>
+      </label>
+
+      <label class="field">
+        <span class="label">Weight <span class="value" id="ascii-weight-val">500</span></span>
+        <input type="range" id="ascii-weight" min="200" max="900" step="50" value="500">
       </label>
     </section>
 
@@ -1308,35 +1363,37 @@ footer a { color: inherit; }
           <span class="hint">The PNG keeps its alpha, so it drops onto anything.</span></span>
       </label>
 
-      <label class="field">
-        <span class="label">Line thickness <span class="value" id="weight-val">1.0×</span></span>
-        <input type="range" id="weight" min="0.2" max="4" step="0.1" value="1">
-      </label>
+      <div id="contour-colour">
+        <label class="field">
+          <span class="label">Line thickness <span class="value" id="weight-val">1.0×</span></span>
+          <input type="range" id="weight" min="0.2" max="4" step="0.1" value="1">
+        </label>
 
-      <h3>Index contours</h3>
-      <p class="hint">Every nth line drawn heavier, the way a printed sheet marks the ones
-        you count by.</p>
+        <h3>Index contours</h3>
+        <p class="hint">Every nth line drawn heavier, the way a printed sheet marks the ones
+          you count by.</p>
 
-      <label class="field">
-        <span class="label">Emphasis <span class="value" id="index-every-val">every 5</span></span>
-        <input type="range" id="index-every" min="0" max="12" step="1" value="5">
-      </label>
+        <label class="field">
+          <span class="label">Emphasis <span class="value" id="index-every-val">every 5</span></span>
+          <input type="range" id="index-every" min="0" max="12" step="1" value="5">
+        </label>
 
-      <label class="field">
-        <span class="label">How much heavier <span class="value" id="index-width-val">2.0×</span></span>
-        <input type="range" id="index-width" min="1" max="5" step="0.1" value="2">
-      </label>
+        <label class="field">
+          <span class="label">How much heavier <span class="value" id="index-width-val">2.0×</span></span>
+          <input type="range" id="index-width" min="1" max="5" step="0.1" value="2">
+        </label>
 
-      <label class="check">
-        <input type="checkbox" id="index-tint">
-        <span><b>Give them their own colour</b></span>
-      </label>
-      <div class="field">
-        <input type="color" id="index-ink" value="#b24c33" disabled>
+        <label class="check">
+          <input type="checkbox" id="index-tint">
+          <span><b>Give them their own colour</b></span>
+        </label>
+        <div class="field">
+          <input type="color" id="index-ink" value="#b24c33" disabled>
+        </div>
       </div>
     </section>
 
-    <section class="panel">
+    <section class="panel" id="text-section">
       <h2>Text lines</h2>
 
       <label class="check">
@@ -1414,8 +1471,8 @@ footer a { color: inherit; }
       <p class="hint" id="export-note"></p>
 
       <button class="btn primary wide" id="download" type="button">Download PNG</button>
-      <p class="hint">The contours are traced again at the full size, so a 4× file is
-        genuinely sharper rather than an enlargement.</p>
+      <p class="hint" id="download-note">The contours are traced again at the full size,
+        so a 4× file is genuinely sharper rather than an enlargement.</p>
     </section>
 
   </div>
@@ -2940,6 +2997,179 @@ footer a { color: inherit; }
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 </script>
 <script>
+/* src/ascii.js */
+/*
+ * ascii.js — the elevation grid as characters.
+ *
+ * The other design in this tool draws lines between heights. This one draws the
+ * heights themselves: the ground is binned into a grid of character cells and
+ * each cell gets a character off a ramp, densest on the low ground and lightest
+ * on the high. What carries the relief is how much ink a character puts on the
+ * page, so the whole picture is one size of one monospaced face and only the
+ * choice of character changes.
+ *
+ * Two things here are worth knowing about:
+ *
+ * 1. The row count is derived from the column count, and not by the picture's
+ *    shape alone. A character cell is about 0.6 as wide as it is tall, so a grid
+ *    of square cells would stand the map up on end. rowsFor is what keeps the
+ *    ground the right shape while the letters keep theirs.
+ *
+ * 2. Cells are box averages of the elevation grid, not point samples. The grid
+ *    is far finer than the character grid — hundreds of samples across against
+ *    tens of characters — and picking one sample per cell would throw away the
+ *    other forty and shimmer as the picture resizes.
+ *
+ * No DOM references, so Node can require() this and check the binning without a
+ * canvas.
+ */
+(function (global) {
+  'use strict';
+
+  var Topo = global.Topo || (global.Topo = {});
+
+  /*
+   * The default ramp, densest first: low ground is heavy, high ground is light.
+   *
+   * It reads as the inverse of the usual terminal-art ramp, where the dense
+   * characters stand for darkness. Here they stand for depth — the valleys are
+   * where the ink collects. A trailing space is a legal ramp character and
+   * makes the summits fade out to nothing, which is worth knowing but not worth
+   * defaulting to.
+   */
+  var RAMP = '@%#*+=-:.';
+
+  /*
+   * Advance width over em for a monospaced face, used until something has
+   * measured the real one. Source Code Pro is 0.6 exactly; the point of
+   * measuring anyway is that a browser which never loaded it falls back to
+   * whatever monospace it has, and that face's advance decides where the
+   * columns land.
+   */
+  var ADVANCE = 0.6;
+
+  /**
+   * The ramp control, parsed.
+   *
+   * Array.from rather than split(''), so a ramp typed with block characters or
+   * anything else outside the basic plane counts each one once instead of
+   * splitting it into halves that render as tofu.
+   */
+  function ramp(text) {
+    var chars = Array.from(String(text === undefined || text === null ? '' : text));
+    return chars.length ? chars : Array.from(RAMP);
+  }
+
+  /**
+   * How many rows of characters go with this many columns.
+   *
+   * The cells have to tile the map exactly, and the characters in them have to
+   * keep their natural proportions — so the cell is as wide as a character
+   * advance and as tall as a line, and the row count falls out of that:
+   *
+   *   (area.w / cols) / (area.h / rows) = advance   ->   rows = advance * cols * area.h / area.w
+   *
+   * At 100 columns on a 4:3 picture that is 45 rows. Deriving rows from the
+   * aspect alone would give 75, and every hill would come out stretched.
+   */
+  function rowsFor(cols, area, advance) {
+    var ratio = advance > 0 ? advance : ADVANCE;
+    if (!(cols > 0) || !(area.w > 0) || !(area.h > 0)) return 1;
+    return Math.max(1, Math.round((ratio * cols * area.h) / area.w));
+  }
+
+  /**
+   * Bin the elevation grid down to cols x rows, and pick a ramp step for each.
+   *
+   * Returns { values, min, max, index } — the mean height per cell, the range
+   * those means cover, and the ramp position per cell as a Uint8Array, both in
+   * row-major order to match the grid.
+   */
+  function cells(grid, cols, rows, steps) {
+    var W = grid.width;
+    var H = grid.height;
+    var data = grid.data;
+    var values = new Float32Array(cols * rows);
+    var min = Infinity;
+    var max = -Infinity;
+
+    for (var r = 0; r < rows; r++) {
+      // Each cell owns a block of the grid. The bounds are computed from the
+      // cell index rather than accumulated, so rounding cannot drift a column
+      // out of step by the far side of a wide picture.
+      var y0 = Math.floor((r * H) / rows);
+      var y1 = Math.max(y0 + 1, Math.floor(((r + 1) * H) / rows));
+      if (y1 > H) y1 = H;
+
+      for (var c = 0; c < cols; c++) {
+        var x0 = Math.floor((c * W) / cols);
+        var x1 = Math.max(x0 + 1, Math.floor(((c + 1) * W) / cols));
+        if (x1 > W) x1 = W;
+
+        var sum = 0;
+        var n = 0;
+        for (var j = y0; j < y1; j++) {
+          var row = j * W;
+          for (var i = x0; i < x1; i++) {
+            sum += data[row + i];
+            n++;
+          }
+        }
+
+        var mean = n > 0 ? sum / n : 0;
+        values[r * cols + c] = mean;
+        if (mean < min) min = mean;
+        if (mean > max) max = mean;
+      }
+    }
+
+    if (!isFinite(min) || !isFinite(max)) {
+      min = 0;
+      max = 0;
+    }
+
+    return { values: values, min: min, max: max, index: indices(values, min, max, steps) };
+  }
+
+  /**
+   * Ramp position per cell, from the cell heights.
+   *
+   * Normalised against the range of the *cell* means rather than the grid's own
+   * min and max. Averaging pulls the extremes in — the highest cell is a mean
+   * over a block that included lower ground — so normalising against the grid
+   * would leave both ends of the ramp unused and wash the picture out. Against
+   * the cells' own range, the densest and lightest characters both appear.
+   *
+   * Flat ground is a picture here, unlike a contour map, which has nothing to
+   * draw when nothing varies. It comes out as one character everywhere.
+   */
+  function indices(values, min, max, steps) {
+    var n = Math.max(1, steps | 0);
+    var out = new Uint8Array(values.length);
+    var span = max - min;
+
+    for (var i = 0; i < values.length; i++) {
+      var t = span > 0 ? (values[i] - min) / span : 0;
+      var step = Math.floor(t * n);
+      out[i] = step < 0 ? 0 : step > n - 1 ? n - 1 : step;
+    }
+
+    return out;
+  }
+
+  Topo.ascii = {
+    RAMP: RAMP,
+    ADVANCE: ADVANCE,
+    ramp: ramp,
+    rowsFor: rowsFor,
+    cells: cells,
+    indices: indices
+  };
+
+  if (typeof module !== 'undefined' && module.exports) module.exports = Topo.ascii;
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+</script>
+<script>
 /* src/search.js */
 /*
  * search.js — place lookup via OpenStreetMap's Nominatim geocoder.
@@ -3517,12 +3747,161 @@ footer a { color: inherit; }
     options = options || {};
     var text = options.text || null;
     return {
+      kind: 'contour',
       width: width,
       height: height,
       background: options.transparent ? null : (palette.background || null),
       text: text && text.on ? text : null,
       layers: layers(result, palette, width, options.weight, text ? text.size : 0)
     };
+  }
+
+  /* --------------------------------------------------------------- ascii */
+
+  /**
+   * How wide a character is, as a fraction of its size, in the face the ASCII
+   * design is set in.
+   *
+   * Measured rather than assumed, because a browser that never got Source Code
+   * Pro is laying out in whatever monospace it has instead, and that face's
+   * advance is what decides how big a character has to be to fill its cell.
+   *
+   * The size matters to the answer. Browsers round a glyph's advance to whole
+   * pixels at small sizes, so the ratio is not the constant a monospaced face
+   * suggests: Source Code Pro measures 0.60 at 100px but 0.64 at 8px. Hence the
+   * argument — ask at the size you mean to draw at.
+   */
+  var measurer = null;
+
+  function advanceRatio(size) {
+    var at = size > 0 ? size : 100;
+    if (!measurer) measurer = offscreen(1, 1).getContext('2d');
+    measurer.font = Topo.textpath.font(at, 400);
+    var width = measurer.measureText('M').width / at;
+    return width > 0 ? width : Topo.ascii.ADVANCE;
+  }
+
+  /**
+   * The size at which a character fills a cell this wide.
+   *
+   * Asked at a large size on purpose, which looks like the wrong question —
+   * these characters are drawn at ten or twenty units, where the ratio measures
+   * noticeably wider. Feeding that measurement back seems more honest and is
+   * not: the rounding only happens when a glyph is rasterised, so it depends on
+   * the size in *device pixels*, and this spec is in design units that the
+   * preview and a 4x download scale differently. There is no one size that
+   * satisfies both, and a spec that chased the preview's would quietly change
+   * the picture on export.
+   *
+   * The face's own ratio is the one scale-independent answer, and it lands
+   * within a few per cent of the cell at every scale either of them uses —
+   * measured at 0.97 to 1.04 across the whole column range. Cells are
+   * positioned by arithmetic anyway, so this only decides how snugly the
+   * characters sit, never where they are.
+   */
+  function sizeForCell(cell) {
+    return cell / advanceRatio(100);
+  }
+
+  /**
+   * A whole picture as characters: where the block sits, what is in each cell,
+   * and what colour it is.
+   *
+   * The cell grid is built here rather than cached upstream because it is a
+   * box average over a few hundred thousand samples — well under a millisecond,
+   * and cheaper than the bookkeeping of another cache stage. That is what keeps
+   * every ASCII control on the repaint path.
+   */
+  function asciiGeometry(grid, palette, width, height, options) {
+    options = options || {};
+
+    var ascii = Topo.ascii;
+    var area = frame(width, height, options.margin);
+    var chars = ascii.ramp(options.ramp);
+    if (options.invert) chars = chars.slice().reverse();
+
+    var cols = Math.max(1, Math.round(options.cols || 100));
+    var cell = area.w / cols;
+
+    /*
+     * The row count comes from the ratio at a large size, not at the size the
+     * characters will be drawn at. That is deliberate: it is the *shape of the
+     * face* the rows have to answer to, and the large-size ratio is the honest
+     * measure of that, uncontaminated by the pixel rounding that inflates it at
+     * small sizes. Using the drawing size here would quietly change how many
+     * rows a picture has when it was exported at four times the scale.
+     */
+    var rows = ascii.rowsFor(cols, area, advanceRatio(100));
+    var fontSize = sizeForCell(cell);
+
+    var colours = [];
+    for (var i = 0; i < chars.length; i++) {
+      colours.push(Topo.palettes.inkFor(palette, i, chars.length));
+    }
+
+    return {
+      kind: 'ascii',
+      width: width,
+      height: height,
+      background: options.transparent ? null : (palette.background || null),
+      area: area,
+      cols: cols,
+      rows: rows,
+      cellWidth: cell,
+      cellHeight: area.h / rows,
+      fontSize: fontSize,
+      weight: options.weight || 400,
+      chars: chars,
+      colours: colours,
+      cells: ascii.cells(grid, cols, rows, chars.length)
+    };
+  }
+
+  /**
+   * Paint the character grid.
+   *
+   * Every cell is placed by arithmetic and drawn on its own. Handing a whole
+   * row to one fillText would be faster and is the obvious thing to try with a
+   * monospaced face — but the browser rounds a glyph's advance to whole pixels
+   * at small sizes, so a row of a hundred characters lands several cells wide
+   * of where the grid says it should, and the picture creeps out of its margin.
+   * Positioning each one costs a call and owes the font nothing.
+   *
+   * Centred in the cell rather than hung off its left edge, so a ramp of
+   * characters with different widths — which most ramps are, once a browser has
+   * rounded them — still reads as a straight column.
+   */
+  function drawAscii(ctx, spec) {
+    var index = spec.cells.index;
+    var half = spec.cellWidth / 2;
+    var colour = null;
+    var drawn = 0;
+
+    ctx.font = Topo.textpath.font(spec.fontSize, spec.weight);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    for (var r = 0; r < spec.rows; r++) {
+      var y = spec.area.y + (r + 0.5) * spec.cellHeight;
+      var row = r * spec.cols;
+
+      for (var c = 0; c < spec.cols; c++) {
+        var step = index[row + c];
+        var want = spec.colours[step];
+
+        // Set only on a change: a solid palette hands back the same array for
+        // every step, so that is one assignment for the whole picture.
+        if (want !== colour) {
+          colour = want;
+          ctx.fillStyle = Topo.palettes.css(colour);
+        }
+
+        ctx.fillText(spec.chars[step], spec.area.x + c * spec.cellWidth + half, y);
+        drawn++;
+      }
+    }
+
+    return drawn;
   }
 
   /**
@@ -3633,6 +4012,22 @@ footer a { color: inherit; }
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
+    var glyphs = 0;
+    var clipped = false;
+
+    /*
+     * The two designs share the canvas work either side of this — clearing, the
+     * background, the one scale that turns design units into pixels, and the
+     * count they report back — and part company only over what goes on top.
+     */
+    if (spec.kind === 'ascii') {
+      glyphs = drawAscii(ctx, spec);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      spec.glyphs = glyphs;
+      spec.clipped = false;
+      return canvas;
+    }
+
     if (stroke) {
       spec.layers.forEach(function (layer) {
         ctx.strokeStyle = Topo.palettes.css(layer.colour);
@@ -3646,9 +4041,6 @@ footer a { color: inherit; }
         ctx.stroke();
       });
     }
-
-    var glyphs = 0;
-    var clipped = false;
 
     if (text) {
       /*
@@ -3756,6 +4148,8 @@ footer a { color: inherit; }
     frame: frame,
     layers: layers,
     geometry: geometry,
+    asciiGeometry: asciiGeometry,
+    advanceRatio: advanceRatio,
     isRing: isRing,
     draw: draw,
     trace: trace,
@@ -3792,6 +4186,7 @@ footer a { color: inherit; }
   var presets = Topo.toolPalettes;
   var render = Topo.toolRender;
   var textpath = Topo.textpath;
+  var ascii = Topo.ascii;
 
   var SLIDER_MAX = 1000;
 
@@ -3808,6 +4203,12 @@ footer a { color: inherit; }
   var MIN_SIDE = 200;
 
   var state = {
+    /* Which picture this is. 'contours' draws lines between heights;
+     * 'ascii' draws the heights themselves as characters. The two share the
+     * elevation grid, the colours, the picture size and the download — only
+     * what is made of the ground differs. */
+    design: 'contours',
+
     lat: 46.8523,
     lng: -121.7603,
     place: 'Mount Rainier',
@@ -3847,6 +4248,14 @@ footer a { color: inherit; }
     textTracking: 0.06,
     textGap: 1.5,
     textKeepLines: false,
+
+    /* The ASCII design. Columns is the only resolution that matters — the rows
+     * follow from it so the ground keeps its shape — and the ramp's own length
+     * is how many steps of height it stands for. */
+    asciiCols: 110,
+    asciiRamp: Topo.ascii.RAMP,
+    asciiInvert: false,
+    asciiWeight: 500,
 
     scale: 1,
     filename: ''
@@ -3943,6 +4352,22 @@ footer a { color: inherit; }
     return fontReady;
   }
 
+  function isAscii() {
+    return state.design === 'ascii';
+  }
+
+  /** The ASCII design's settings, for the preview and the download alike. */
+  function asciiOptions() {
+    return {
+      cols: state.asciiCols,
+      ramp: state.asciiRamp,
+      invert: state.asciiInvert,
+      weight: state.asciiWeight,
+      margin: state.margin,
+      transparent: state.transparent
+    };
+  }
+
   /** The palette the controls currently describe. */
   function palette() {
     var base = state.custom
@@ -3987,7 +4412,11 @@ footer a { color: inherit; }
 
   function indexSettings() {
     return {
-      every: state.indexEvery,
+      /* Index contours are a contour idea: every nth line drawn heavier. The
+       * ASCII design asks the palette for a colour per ramp step, and an index
+       * rule applied to those steps would tint every nth one — banding across
+       * the map that nothing on screen would explain. So it is off there. */
+      every: isAscii() ? 0 : state.indexEvery,
       width: state.indexWidth,
       ink: state.indexTint ? palettes.parse(state.indexInk) : null
     };
@@ -4036,16 +4465,22 @@ footer a { color: inherit; }
   }
 
   function stats() {
-    if (!cache.grid || !cache.result) {
+    if (!cache.grid || (!isAscii() && !cache.result)) {
       $('stats').textContent = '';
       return;
     }
     var plan = cache.plan;
     var result = cache.result;
+    var shape = cache.geometry;
+
+    // The ground's range and how finely it was sampled belong to either
+    // design; what sits between them is what each one made of it.
     $('stats').textContent = [
       Math.round(cache.grid.min) + '–' + Math.round(cache.grid.max) + ' m',
-      result.interval ? Math.round(result.interval) + ' m between lines' : '',
-      result.pathCount + ' paths',
+      isAscii()
+        ? (shape && shape.kind === 'ascii' ? shape.cols + ' × ' + shape.rows + ' characters' : '')
+        : (result.interval ? Math.round(result.interval) + ' m between lines' : ''),
+      isAscii() ? '' : result.pathCount + ' paths',
       Math.round(plan.metresPerSample) + ' m/sample at zoom ' + plan.zoom
     ].filter(Boolean).join(' · ');
   }
@@ -4089,10 +4524,15 @@ footer a { color: inherit; }
         (plan.tileCount === 1 ? '' : 's') + '…', true);
       progress(0);
 
+      // The fetch owns the first half of the bar when a trace follows it, and
+      // the whole of it when nothing does — otherwise the ASCII design's bar
+      // would stop at the middle and vanish.
+      var share = isAscii() ? 1 : 0.5;
+
       terrain = elevation.fetchGrid(plan, {
         signal: terrainAbort.signal,
         onProgress: function (done, total) {
-          if (live()) progress(total ? (done / total) * 0.5 : 0);
+          if (live()) progress(total ? (done / total) * share : 0);
         }
       }).then(function (grid) {
         cache.grid = grid;
@@ -4105,6 +4545,18 @@ footer a { color: inherit; }
     return terrain
       .then(function (grid) {
         if (!live()) return null;
+
+        /*
+         * The ASCII design is finished at this point: it wants the grid and
+         * nothing else, and binning it into characters is a paint-stage job.
+         * The grid is returned because the next step treats a falsy result as
+         * "nothing happened" and would leave the status line mid-sentence.
+         *
+         * Flat ground stops a contour map — there is nothing to draw a line
+         * between — but it is a perfectly good picture in characters, so that
+         * refusal belongs to the contour branch rather than to both.
+         */
+        if (isAscii()) return grid;
 
         if (!(grid.max > grid.min)) {
           throw new Error('That area is flat — every sample reads ' +
@@ -4141,6 +4593,7 @@ footer a { color: inherit; }
         paint();
         stats();
         status(describe(), false);
+        if (isAscii()) syncAsciiRamp();
         progress(null);
       })
       .catch(function (err) {
@@ -4159,8 +4612,11 @@ footer a { color: inherit; }
 
   function describe() {
     var size = exportSize();
+    var made = isAscii()
+      ? state.asciiCols + ' characters across'
+      : state.levels + ' lines';
     var line = state.place + ' · ' + fmtDistance(state.widthM) + ' across · ' +
-      state.levels + ' lines · ' + size.width + ' × ' + size.height + ' px';
+      made + ' · ' + size.width + ' × ' + size.height + ' px';
 
     // The one thing about the lettering worth interrupting with: a size small
     // enough to run past the glyph ceiling leaves part of the map unlettered,
@@ -4180,14 +4636,18 @@ footer a { color: inherit; }
    * and index settings all end here without touching the network or the tracer.
    */
   function paint() {
-    if (!cache.result) return;
+    // The two designs need different things to exist: characters need only the
+    // ground, lines need the trace made from it.
+    if (isAscii() ? !cache.grid : !cache.result) return;
 
     var design = designFrame();
-    var spec = render.geometry(cache.result, palette(), design.width, design.height, {
-      weight: state.weight,
-      transparent: state.transparent,
-      text: textOptions()
-    });
+    var spec = isAscii()
+      ? render.asciiGeometry(cache.grid, palette(), design.width, design.height, asciiOptions())
+      : render.geometry(cache.result, palette(), design.width, design.height, {
+        weight: state.weight,
+        transparent: state.transparent,
+        text: textOptions()
+      });
     cache.geometry = spec;
 
     var canvas = $('view');
@@ -4207,8 +4667,11 @@ footer a { color: inherit; }
     render.draw(canvas, spec);
 
     // Drawn once in whatever face was to hand, then again properly. Only ever
-    // one repeat: fontLoaded is set before this can run a second time.
-    if (spec.text && !fontLoaded) ensureFont().then(paint);
+    // one repeat: fontLoaded is set before this can run a second time. The
+    // ASCII design needs this as much as the lettering does — more, even, since
+    // its column positions come from the face's advance, and a fallback with a
+    // different one would misalign every column in the picture.
+    if ((spec.text || spec.kind === 'ascii') && !fontLoaded) ensureFont().then(paint);
   }
 
   /* ----------------------------------------------------------------- export */
@@ -4239,12 +4702,25 @@ footer a { color: inherit; }
     progress(0);
     $('download').disabled = true;
 
-    return render.trace(cache.grid, frame, {
-      levels: state.levels,
-      spacing: render.EXPORT_SPACING,
-      tidy: state.tidy,
-      onProgress: function (done, total) { progress(total ? done / total : 0); }
-    })
+    /*
+     * Contours are traced again at the output size; characters are not.
+     *
+     * The re-trace exists because vertex spacing is in output units, so an
+     * enlarged preview would show its facets. A character grid has no such
+     * problem: the columns are the same columns, only bigger, because the cell
+     * width and the size that fills it both come from the output frame. So the
+     * ASCII download is the preview enlarged, exactly, for no CPU at all.
+     */
+    var made = isAscii()
+      ? Promise.resolve(null)
+      : render.trace(cache.grid, frame, {
+        levels: state.levels,
+        spacing: render.EXPORT_SPACING,
+        tidy: state.tidy,
+        onProgress: function (done, total) { progress(total ? done / total : 0); }
+      });
+
+    return made
       .then(function (result) {
         // The face has to be in hand before the offscreen canvas letters with
         // it; nothing on the page has necessarily rendered it yet.
@@ -4252,11 +4728,13 @@ footer a { color: inherit; }
       })
       .then(function (result) {
         var canvas = render.offscreen(size.width, size.height);
-        render.draw(canvas, render.geometry(result, palette(), size.width, size.height, {
-          weight: state.weight,
-          transparent: state.transparent,
-          text: textOptions()
-        }));
+        render.draw(canvas, isAscii()
+          ? render.asciiGeometry(cache.grid, palette(), size.width, size.height, asciiOptions())
+          : render.geometry(result, palette(), size.width, size.height, {
+            weight: state.weight,
+            transparent: state.transparent,
+            text: textOptions()
+          }));
         var name = $('filename').value.trim() || defaultFilename();
         if (!/\.png$/i.test(name)) name += '.png';
         return render.toPng(canvas, name);
@@ -4384,6 +4862,9 @@ footer a { color: inherit; }
   function repaint() {
     paint();
     status(describe(), false);
+    // The derived row count is only known once a spec exists, so the note that
+    // reports it is refreshed wherever one is made.
+    if (isAscii()) syncAsciiRamp();
   }
 
   var ASPECTS = [
@@ -4509,6 +4990,58 @@ footer a { color: inherit; }
   function syncColourMode() {
     $('solid-row').hidden = state.mode !== 'solid';
     $('ramp-row').hidden = state.mode !== 'ramp';
+  }
+
+  /* ----------------------------------------------------------------- design */
+
+  /**
+   * Show the controls this design has, hide the ones it does not.
+   *
+   * Everything about the ground, the picture and the download is shared; what
+   * differs is only what gets made of the ground, so those are the only
+   * sections that move. Contour-only controls are hidden rather than disabled
+   * because a greyed-out panel of settings that cannot apply is just a longer
+   * page to scroll past.
+   */
+  function syncDesign() {
+    var ascii = isAscii();
+
+    $('ascii-section').hidden = !ascii;
+    $('contour-terrain').hidden = ascii;
+    $('contour-tidy').hidden = ascii;
+    $('contour-colour').hidden = ascii;
+    $('text-section').hidden = ascii;
+
+    // Why a big download is worth having differs between the two, and the
+    // contour answer is not true of characters — nothing is traced again.
+    $('download-note').textContent = ascii
+      ? 'The same characters, drawn larger — the grid does not change with the ' +
+        'size, so a 4× file is the picture at 4× and not a different one.'
+      : 'The contours are traced again at the full size, so a 4× file is ' +
+        'genuinely sharper rather than an enlargement.';
+
+    Array.prototype.forEach.call(doc.getElementsByName('design'), function (radio) {
+      radio.checked = radio.value === state.design;
+    });
+
+    syncAsciiRamp();
+  }
+
+  /**
+   * What the ramp box and the grid note currently say.
+   *
+   * The step count is worth showing because it is not a setting anywhere — it
+   * is however many characters were typed — and the row count because it is
+   * derived, so the only way to know what the picture will be is to be told.
+   */
+  function syncAsciiRamp() {
+    var steps = ascii.ramp(state.asciiRamp).length;
+    $('ascii-steps-val').textContent = steps + (steps === 1 ? ' step' : ' steps');
+
+    var shape = cache.geometry;
+    $('ascii-grid-note').textContent = shape && shape.kind === 'ascii'
+      ? 'Currently ' + shape.cols + ' × ' + shape.rows + '.'
+      : '';
   }
 
   /* ------------------------------------------------------------------- text */
@@ -4656,6 +5189,52 @@ footer a { color: inherit; }
       repaint();
     });
 
+    /* --------------------------------------------------------------- design */
+
+    Array.prototype.forEach.call(doc.getElementsByName('design'), function (radio) {
+      radio.addEventListener('change', function () {
+        if (!radio.checked) return;
+        state.design = radio.value;
+        syncDesign();
+        /*
+         * A repaint, not a rerun. Both designs are made from the same elevation
+         * grid, and it is already in hand — switching is a frame, not a
+         * download. The one case that needs more is arriving in contour mode
+         * with no trace yet, which paint() declines to draw and run() then
+         * supplies.
+         */
+        if (!isAscii() && !cache.result) { schedule(); return; }
+        repaint();
+      });
+    });
+
+    $('ascii-cols').addEventListener('input', function () {
+      state.asciiCols = parseInt($('ascii-cols').value, 10);
+      $('ascii-cols-val').textContent = state.asciiCols;
+      repaint();
+    });
+
+    // Typing a ramp changes every character on the map, so it waits for a
+    // pause the same way the words box does.
+    var rampDebounce = null;
+    $('ascii-ramp').addEventListener('input', function () {
+      state.asciiRamp = $('ascii-ramp').value;
+      syncAsciiRamp();
+      clearTimeout(rampDebounce);
+      rampDebounce = setTimeout(repaint, 150);
+    });
+
+    $('ascii-invert').addEventListener('change', function () {
+      state.asciiInvert = $('ascii-invert').checked;
+      repaint();
+    });
+
+    $('ascii-weight').addEventListener('input', function () {
+      state.asciiWeight = parseInt($('ascii-weight').value, 10);
+      $('ascii-weight-val').textContent = state.asciiWeight;
+      repaint();
+    });
+
     /* ------------------------------------------------------------ lettering */
 
     $('text-on').addEventListener('change', function () {
@@ -4769,6 +5348,14 @@ footer a { color: inherit; }
     $('text-gap-val').textContent = state.textGap.toFixed(1) + ' em';
     $('text-keep-lines').checked = state.textKeepLines;
     syncWordCount();
+
+    $('ascii-cols').value = state.asciiCols;
+    $('ascii-cols-val').textContent = state.asciiCols;
+    $('ascii-ramp').value = state.asciiRamp;
+    $('ascii-invert').checked = state.asciiInvert;
+    $('ascii-weight').value = state.asciiWeight;
+    $('ascii-weight-val').textContent = state.asciiWeight;
+    syncDesign();
 
     $('custom-toggle').setAttribute('aria-pressed', String(state.custom));
     $('custom-panel').hidden = !state.custom;
