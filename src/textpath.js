@@ -209,6 +209,84 @@
    */
   var MAX_LEAN = (125 * Math.PI) / 180;
 
+  /*
+   * How close two letters may come before they are treated as colliding, as a
+   * fraction of their combined size. Contours crowd together on steep ground —
+   * closer than the lettering is tall — and words from neighbouring lines then
+   * print through each other into something nobody can read. Below this, the
+   * later of the two gives way.
+   */
+  var CLEARANCE = 0.85;
+
+  /*
+   * The closest two repeats of a phrase may be set, as a fraction of one
+   * letter's advance — about a quarter of an em, a little under a word space.
+   * This is what stops the packing above from shouldering one repeat into the
+   * back of the last when squeezing an extra one in would nearly fit.
+   */
+  var MIN_GAP = 0.4;
+
+  /*
+   * How many places along its slot a phrase may try before giving up. Six is
+   * enough to step past a bend without turning placement into a search: the
+   * first try is the evenly spaced one, and most phrases never need a second.
+   */
+  var SLIDE_TRIES = 6;
+
+  /**
+   * A record of where letters have already been set, so the next ones can keep
+   * out of the way.
+   *
+   * A grid of buckets rather than a list: what matters is whether anything is
+   * near this point, and bucketing makes that a look at nine small buckets
+   * instead of a walk through every letter on the map. The cell wants to be
+   * comfortably larger than the biggest letter, so a neighbour can never sit
+   * further away than one bucket.
+   */
+  function occupancy(cell) {
+    var buckets = new Map();
+
+    function bucket(x, y) {
+      return Math.floor(x / cell) + ',' + Math.floor(y / cell);
+    }
+
+    return {
+      /** Would any of these letters land on top of one already set? */
+      blocked: function (placed, size) {
+        for (var i = 0; i < placed.length; i++) {
+          var cx = Math.floor(placed[i].x / cell);
+          var cy = Math.floor(placed[i].y / cell);
+
+          for (var dx = -1; dx <= 1; dx++) {
+            for (var dy = -1; dy <= 1; dy++) {
+              var here = buckets.get((cx + dx) + ',' + (cy + dy));
+              if (!here) continue;
+
+              for (var k = 0; k < here.length; k += 3) {
+                var gap = CLEARANCE * (size + here[k + 2]) / 2;
+                var ex = placed[i].x - here[k];
+                var ey = placed[i].y - here[k + 1];
+                if (ex * ex + ey * ey < gap * gap) return true;
+              }
+            }
+          }
+        }
+
+        return false;
+      },
+
+      /** Remember these letters, now that they are going on the page. */
+      claim: function (placed, size) {
+        for (var i = 0; i < placed.length; i++) {
+          var key = bucket(placed[i].x, placed[i].y);
+          var here = buckets.get(key);
+          if (!here) buckets.set(key, (here = []));
+          here.push(placed[i].x, placed[i].y, size);
+        }
+      }
+    };
+  }
+
   /**
    * Set one run of the phrase, one way round or the other, and report on it.
    *
@@ -246,7 +324,10 @@
    * Returns [] when the path cannot hold the phrase once — see the note at the
    * top of the file about fragments.
    *
-   * `measured` is what measurePhrase returned; options: { gap, closed, limit }.
+   * `measured` is what measurePhrase returned; options:
+   * { gap, closed, limit, size, space }. `space` is an occupancy shared across
+   * the whole picture — pass the same one to every path and no two words will
+   * be set on top of each other.
    */
   function layout(points, cum, measured, options) {
     options = options || {};
@@ -255,32 +336,62 @@
     var advance = measured.advance;
     var glyphs = measured.glyphs;
     var gap = options.gap || 0;
+    var space = options.space || null;
+    var size = options.size || 0;
 
     if (!(total > 0) || !(advance > 0) || advance > total) return [];
 
     /*
      * How many repeats fit, and how far apart to set them.
      *
-     * A closed ring is measured with a gap after the last repeat as well as
-     * between them — it has to meet its own beginning — and whatever slack is
-     * left over is shared out among those gaps rather than dumped at the seam.
-     * That is what makes a ring read as continuous lettering instead of a
-     * sentence with a hole in it. An open path has no seam, so its slack goes
-     * to the two ends and centres the run.
+     * Whatever is left over after the repeats is shared out evenly rather than
+     * banked in one place. A ring has a gap after its last repeat as well as
+     * between them — it has to meet its own beginning — so its slack goes to
+     * those gaps and the lettering wraps with no bald patch at the seam.
+     *
+     * An open path spreads its repeats from one end to the other, first letter
+     * at the start and last letter at the finish. Centring the run instead, as
+     * this did at first, banks the whole remainder at the two ends: a path a
+     * little under twice the length of its phrase came out with a phrase in the
+     * middle and a quarter of the line blank at either side. Only a path with a
+     * single repeat has ends to pad, and that one is centred.
      */
-    var reps;
-    var step;
-    var start;
-
-    if (options.closed) {
-      reps = Math.max(1, Math.floor(total / (advance + gap)));
-      step = total / reps;
-      start = 0;
-    } else {
-      reps = Math.max(1, Math.floor((total + gap) / (advance + gap)));
-      step = advance + gap;
-      start = (total - (reps * advance + (reps - 1) * gap)) / 2;
+    function gapAt(n) {
+      if (options.closed) return total / n - advance;
+      if (n < 2) return total - advance;
+      return (total - advance) / (n - 1) - advance;
     }
+
+    /*
+     * Which repeat count to take.
+     *
+     * Rounding down looks like the safe answer and is the one that leaves the
+     * holes: a ring a little under twice its phrase drops to a single repeat
+     * and wears the entire remainder as one gap — wider than the phrase itself,
+     * and the most conspicuous blank on the map. So both counts either side are
+     * costed and the one landing nearest the asked-for gap wins, provided it
+     * does not shoulder the words up against each other. The setting stays a
+     * target rather than becoming a floor, which is what it reads as.
+     */
+    var floorGap = MIN_GAP * (advance / glyphs.length);
+    if (floorGap > gap) floorGap = gap;
+
+    var ideal = options.closed
+      ? total / (advance + gap)
+      : 1 + (total - advance) / (advance + gap);
+
+    var lo = Math.max(1, Math.floor(ideal));
+    var hi = Math.max(1, Math.ceil(ideal));
+    var reps = lo;
+
+    if (hi !== lo && gapAt(hi) >= floorGap &&
+        Math.abs(gapAt(hi) - gap) < Math.abs(gapAt(lo) - gap)) {
+      reps = hi;
+    }
+
+    var step = options.closed ? total / reps
+      : (reps > 1 ? (total - advance) / (reps - 1) : 0);
+    var start = options.closed || reps > 1 ? 0 : (total - advance) / 2;
 
     // The ceiling is checked a whole repeat at a time: a budget that ran out
     // mid-word would put exactly the half-written litter on the page that the
@@ -292,28 +403,58 @@
     for (var r = 0; r < reps; r++) {
       if (out.length + glyphs.length > limit) break;
 
-      var from = start + r * step;
-      var to = from + advance;
+      /*
+       * Try the phrase where the rhythm wants it, and if it will not go there,
+       * walk it along the line looking for somewhere it will.
+       *
+       * What stops a phrase is nearly always one hairpin under one end of it,
+       * and the straight either side would have taken it happily. Abandoning
+       * the repeat instead — which is what this did at first — costs a whole
+       * phrase-length of blank at every bend on the map, and those blanks were
+       * the most visible thing about it. Sliding is bounded by the next
+       * repeat's place, and offset zero is tried first, so a line with nothing
+       * in its way still comes out evenly spaced.
+       */
+      var run = null;
 
-      // Where each letter's midpoint falls along the path. Midpoints, because a
-      // letter on a curve should be centred on it rather than hung off its own
-      // left edge.
-      var centres = [];
-      var at = from;
-      for (var g = 0; g < glyphs.length; g++) {
-        centres.push(at + glyphs[g].width / 2);
-        at += glyphs[g].width + tracking;
+      for (var t = 0; t < SLIDE_TRIES; t++) {
+        // A lone repeat on an open path has no next repeat to slide towards, so
+        // it stays where it was centred rather than being tried six times over.
+        if (t > 0 && step <= 0) break;
+
+        var from = start + r * step + (step * t) / SLIDE_TRIES;
+        if (from + advance > total) break;
+        var to = from + advance;
+
+        // Where each letter's midpoint falls along the path. Midpoints, because
+        // a letter on a curve should be centred on it rather than hung off its
+        // own left edge.
+        var centres = [];
+        var at = from;
+        for (var g = 0; g < glyphs.length; g++) {
+          centres.push(at + glyphs[g].width / 2);
+          at += glyphs[g].width + tracking;
+        }
+
+        // Set it forwards; if most of it would read right to left, set it the
+        // other way instead. The second pass is only paid for when it is needed.
+        var candidate = runAlong(points, cum, glyphs, centres, false, from + to);
+        if (candidate.upright * 2 < centres.length) {
+          candidate = runAlong(points, cum, glyphs, centres, true, from + to);
+        }
+
+        // Not if it stands the phrase on its head, and not on top of lettering
+        // already there — tested before any of this run is claimed, or its own
+        // letters would block each other.
+        if (candidate.lean > MAX_LEAN) continue;
+        if (space && space.blocked(candidate.placed, size)) continue;
+
+        run = candidate;
+        break;
       }
 
-      // Set it forwards; if most of it would read right to left, set it the
-      // other way instead. The second pass is only paid for when it is needed.
-      var run = runAlong(points, cum, glyphs, centres, false, from + to);
-      if (run.upright * 2 < centres.length) {
-        run = runAlong(points, cum, glyphs, centres, true, from + to);
-      }
-
-      // Neither way round could keep the phrase off its head: leave it out.
-      if (run.lean > MAX_LEAN) continue;
+      if (!run) continue;
+      if (space) space.claim(run.placed, size);
 
       for (var p = 0; p < run.placed.length; p++) out.push(run.placed[p]);
     }
@@ -332,7 +473,9 @@
   Topo.textpath = {
     FONT: FONT,
     MAX_LEAN: MAX_LEAN,
+    CLEARANCE: CLEARANCE,
     font: font,
+    occupancy: occupancy,
     phrases: phrases,
     resolve: resolve,
     phraseFor: phraseFor,
