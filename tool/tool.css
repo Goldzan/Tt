@@ -189,6 +189,16 @@ textarea {
   line-height: 1.6;
 }
 
+/* The character ramp. Set in the face the picture is drawn in, and spaced out,
+ * because the whole point of the control is comparing how much ink each
+ * character puts down — and a trailing space is a legal entry that would be
+ * invisible without room around it. */
+input.lettered {
+  font-family: var(--lettering);
+  font-size: 15px;
+  letter-spacing: .28em;
+}
+
 input[type=range] { width: 100%; accent-color: var(--accent); }
 
 input[type=color] {

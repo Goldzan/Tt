@@ -34,6 +34,16 @@
   <div class="controls">
 
     <section class="panel">
+      <h2>Design</h2>
+      <div class="modes">
+        <label><input type="radio" name="design" value="contours" checked> Contour lines</label>
+        <label><input type="radio" name="design" value="ascii"> ASCII art</label>
+      </div>
+      <p class="hint" id="design-hint">Lines drawn between heights, or the heights
+        themselves set as characters.</p>
+    </section>
+
+    <section class="panel">
       <h2>Where</h2>
       <div class="row">
         <input type="search" id="q" placeholder="Mount Rainier, Snowdon, Yosemite…"
@@ -72,10 +82,12 @@
         <input type="range" id="width" min="0" max="1000" step="1" value="530">
       </label>
 
-      <label class="field">
-        <span class="label">Contour lines <span class="value" id="levels-val">20</span></span>
-        <input type="range" id="levels" min="5" max="60" step="1" value="20">
-      </label>
+      <div id="contour-terrain">
+        <label class="field">
+          <span class="label">Contour lines <span class="value" id="levels-val">20</span></span>
+          <input type="range" id="levels" min="5" max="60" step="1" value="20">
+        </label>
+      </div>
 
       <label class="field">
         <span class="label">Terrain detail</span>
@@ -86,10 +98,43 @@
         </select>
       </label>
 
+      <div id="contour-tidy">
+        <label class="check">
+          <input type="checkbox" id="tidy">
+          <span><b>Tidy up tiny loops</b>
+            <span class="hint">Drops the specks the elevation data throws up.</span></span>
+        </label>
+      </div>
+    </section>
+
+    <section class="panel" id="ascii-section" hidden>
+      <h2>Characters</h2>
+
+      <label class="field">
+        <span class="label">Across the picture <span class="value" id="ascii-cols-val">110</span></span>
+        <input type="range" id="ascii-cols" min="20" max="240" step="1" value="110">
+      </label>
+      <p class="hint">The rows follow, so the ground keeps its shape.
+        <span id="ascii-grid-note"></span></p>
+
+      <div class="field">
+        <span class="label">Ramp <span class="value" id="ascii-steps-val">9 steps</span></span>
+        <input type="text" id="ascii-ramp" class="lettered" spellcheck="false"
+               autocomplete="off" autocapitalize="off" aria-describedby="ascii-ramp-hint">
+        <p class="hint" id="ascii-ramp-hint">Low ground first. However many characters you
+          type is how many steps of height there are — end it with a space to let the
+          summits fade out.</p>
+      </div>
+
       <label class="check">
-        <input type="checkbox" id="tidy">
-        <span><b>Tidy up tiny loops</b>
-          <span class="hint">Drops the specks the elevation data throws up.</span></span>
+        <input type="checkbox" id="ascii-invert">
+        <span><b>Densest on high ground</b>
+          <span class="hint">Turns the ramp round.</span></span>
+      </label>
+
+      <label class="field">
+        <span class="label">Weight <span class="value" id="ascii-weight-val">500</span></span>
+        <input type="range" id="ascii-weight" min="200" max="900" step="50" value="500">
       </label>
     </section>
 
@@ -156,35 +201,37 @@
           <span class="hint">The PNG keeps its alpha, so it drops onto anything.</span></span>
       </label>
 
-      <label class="field">
-        <span class="label">Line thickness <span class="value" id="weight-val">1.0×</span></span>
-        <input type="range" id="weight" min="0.2" max="4" step="0.1" value="1">
-      </label>
+      <div id="contour-colour">
+        <label class="field">
+          <span class="label">Line thickness <span class="value" id="weight-val">1.0×</span></span>
+          <input type="range" id="weight" min="0.2" max="4" step="0.1" value="1">
+        </label>
 
-      <h3>Index contours</h3>
-      <p class="hint">Every nth line drawn heavier, the way a printed sheet marks the ones
-        you count by.</p>
+        <h3>Index contours</h3>
+        <p class="hint">Every nth line drawn heavier, the way a printed sheet marks the ones
+          you count by.</p>
 
-      <label class="field">
-        <span class="label">Emphasis <span class="value" id="index-every-val">every 5</span></span>
-        <input type="range" id="index-every" min="0" max="12" step="1" value="5">
-      </label>
+        <label class="field">
+          <span class="label">Emphasis <span class="value" id="index-every-val">every 5</span></span>
+          <input type="range" id="index-every" min="0" max="12" step="1" value="5">
+        </label>
 
-      <label class="field">
-        <span class="label">How much heavier <span class="value" id="index-width-val">2.0×</span></span>
-        <input type="range" id="index-width" min="1" max="5" step="0.1" value="2">
-      </label>
+        <label class="field">
+          <span class="label">How much heavier <span class="value" id="index-width-val">2.0×</span></span>
+          <input type="range" id="index-width" min="1" max="5" step="0.1" value="2">
+        </label>
 
-      <label class="check">
-        <input type="checkbox" id="index-tint">
-        <span><b>Give them their own colour</b></span>
-      </label>
-      <div class="field">
-        <input type="color" id="index-ink" value="#b24c33" disabled>
+        <label class="check">
+          <input type="checkbox" id="index-tint">
+          <span><b>Give them their own colour</b></span>
+        </label>
+        <div class="field">
+          <input type="color" id="index-ink" value="#b24c33" disabled>
+        </div>
       </div>
     </section>
 
-    <section class="panel">
+    <section class="panel" id="text-section">
       <h2>Text lines</h2>
 
       <label class="check">
@@ -262,8 +309,8 @@
       <p class="hint" id="export-note"></p>
 
       <button class="btn primary wide" id="download" type="button">Download PNG</button>
-      <p class="hint">The contours are traced again at the full size, so a 4× file is
-        genuinely sharper rather than an enlargement.</p>
+      <p class="hint" id="download-note">The contours are traced again at the full size,
+        so a 4× file is genuinely sharper rather than an enlargement.</p>
     </section>
 
   </div>
@@ -281,6 +328,7 @@
 <script data-inline="src/contour.js"></script>
 <script data-inline="src/palettes.js"></script>
 <script data-inline="src/textpath.js"></script>
+<script data-inline="src/ascii.js"></script>
 <script data-inline="src/search.js"></script>
 <script data-inline="src/map.js"></script>
 <script data-inline="tool/tool-palettes.js"></script>
