@@ -116,6 +116,17 @@
     waterLines: true,
     waterWeight: 0.9,
 
+    /* What makes it a liquid rather than a lit solid: the flanks of the ripples
+     * mirror the sky while the flats between them are seen into, the ground
+     * below slides about as a wave passes over it, and each crest gathers a
+     * band of light beneath itself. The sky has to be given, because a picture
+     * of water from directly above has no horizon in it to take one from. */
+    waterRealistic: true,
+    waterReflect: 0.45,
+    waterClarity: 0.5,
+    waterSkyTop: '#3a6ea5',
+    waterSkyLow: '#dceaf5',
+
     scale: 1,
     filename: ''
   };
@@ -273,6 +284,13 @@
       glint: state.waterGlint,
       lines: state.waterLines,
       weight: state.waterWeight,
+      /* Zeroed rather than passed with a flag beside them. No mirror and no
+       * clarity is already the plain lit surface, so the renderer keeps one way
+       * of shading a sample and the checkbox is still an honest switch. */
+      reflect: state.waterRealistic ? state.waterReflect : 0,
+      clarity: state.waterRealistic ? state.waterClarity : 0,
+      skyZenith: palettes.parse(state.waterSkyTop),
+      skyHorizon: palettes.parse(state.waterSkyLow),
       margin: state.margin,
       transparent: state.transparent,
       // What the terrain currently is, so the renderer can keep the shaded
@@ -1294,6 +1312,32 @@
       waterChanged();
     });
 
+    $('water-realistic').addEventListener('change', function () {
+      state.waterRealistic = $('water-realistic').checked;
+      $('water-real-rows').hidden = !state.waterRealistic;
+      waterChanged();
+    });
+
+    $('water-reflect').addEventListener('input', function () {
+      state.waterReflect = parseFloat($('water-reflect').value);
+      $('water-reflect-val').textContent = state.waterReflect.toFixed(2);
+      waterChanged();
+    });
+
+    $('water-clarity').addEventListener('input', function () {
+      state.waterClarity = parseFloat($('water-clarity').value);
+      $('water-clarity-val').textContent = state.waterClarity.toFixed(2);
+      waterChanged();
+    });
+
+    ['water-sky-top', 'water-sky-low'].forEach(function (id) {
+      $(id).addEventListener('input', function () {
+        if (id === 'water-sky-top') state.waterSkyTop = $(id).value;
+        else state.waterSkyLow = $(id).value;
+        waterChanged();
+      });
+    });
+
     // The crest lines are drawn over the surface rather than into it, so these
     // two restroke and leave the shading alone — no reason to make them wait.
     $('water-lines').addEventListener('change', function () {
@@ -1445,6 +1489,14 @@
     $('water-wash-val').textContent = state.waterWash.toFixed(2);
     $('water-glint').value = state.waterGlint;
     $('water-glint-val').textContent = state.waterGlint.toFixed(2);
+    $('water-realistic').checked = state.waterRealistic;
+    $('water-real-rows').hidden = !state.waterRealistic;
+    $('water-reflect').value = state.waterReflect;
+    $('water-reflect-val').textContent = state.waterReflect.toFixed(2);
+    $('water-clarity').value = state.waterClarity;
+    $('water-clarity-val').textContent = state.waterClarity.toFixed(2);
+    $('water-sky-top').value = state.waterSkyTop;
+    $('water-sky-low').value = state.waterSkyLow;
     $('water-lines').checked = state.waterLines;
     $('water-line-rows').hidden = !state.waterLines;
     $('water-weight').value = state.waterWeight;

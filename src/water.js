@@ -74,6 +74,46 @@
    */
   var FLAT = 0.1;
 
+  /*
+   * How sharply the mirror comes on as a facet tilts away from the eye.
+   *
+   * Water reflects almost nothing when you look straight down into it and
+   * everything at a grazing angle, and Schlick's approximation puts that at
+   * (1 - cos)^5 over a base of about 2%. Taken literally that is useless here:
+   * this is a plan view, so the eye is straight overhead, and the steepest
+   * facet a ripple reaches is under thirty degrees — where the real answer is
+   * two per cent and a reflection control would do nothing at any setting.
+   *
+   * What is worth keeping is the *shape* — clear on the flats, rising fast on
+   * the flanks — so the exponent is dropped to two and the whole curve is
+   * normalised against the steepest facet this surface actually has. A setting
+   * of 1 then means "as reflective as this water ever gets" rather than a
+   * number of per cent nobody can see. Squared rather than linear because the
+   * point is the contrast: the mirror belongs on the flanks and the flats
+   * belong clear.
+   */
+  var FRESNEL_POWER = 2;
+
+  /*
+   * How far the bed shifts under the steepest part of a wave, as a fraction of
+   * the map's width. About one per cent — enough that the ground visibly slides
+   * as it passes under a ripple, not so much that it stops looking like the
+   * same ground.
+   */
+  var REFRACT = 0.012;
+
+  /*
+   * How bright the light gathered under a crest gets.
+   *
+   * A crest is convex, so it works as a lens and focuses what passes through it
+   * into a band below. This is that band's brightness at full clarity — an
+   * approximation drawn from the wave's own curvature rather than any tracing
+   * of light, so it lands under every crest alike however deep the water is
+   * there. Worth knowing before anyone tries to extend it into something it is
+   * not.
+   */
+  var CAUSTIC = 0.55;
+
   function normalise3(x, y, z) {
     var len = Math.sqrt(x * x + y * y + z * z) || 1;
     return [x / len, y / len, z / len];
@@ -110,6 +150,12 @@
    * and `interval`, the lowest contour level and the spacing between levels,
    * and then `depth`, `sharp`, `wash`, `glint` and `ambient`.
    *
+   * `reflect`, `clarity`, `skyZenith` and `skyHorizon` are what make it a
+   * liquid rather than a shaded solid: how much of the sky the flanks mirror,
+   * how far you see into the flats, and what the sky is made of. All three
+   * effects fall away to nothing at zero, so a caller with them switched off
+   * gets the plain lit surface and this function still has one path through it.
+   *
    * base and interval are the tracer's own, handed in rather than worked out
    * again from the grid's range. They agree today, but two files deriving the
    * same levels separately is exactly how the crests and the lines would come
@@ -138,6 +184,15 @@
     var ambient = options.ambient === undefined ? AMBIENT : options.ambient;
 
     /*
+     * There is no `realistic` flag here on purpose. The caller zeroes these two
+     * when its checkbox is off, and zero is already "no mirror, no wobble, no
+     * gathered light" — so the panel gets an honest switch and this file keeps
+     * one way of shading a sample rather than two that have to be kept in step.
+     */
+    var reflect = options.reflect || 0;
+    var clarity = options.clarity || 0;
+
+    /*
      * The colour of the water, worked out 256 times instead of once per sample.
      * A palette's lookup walks a list of stops, and at three quarters of a
      * million samples that walk is most of the pass; the table is 768 bytes and
@@ -152,6 +207,42 @@
       lut[k * 3 + 1] = colour[1];
       lut[k * 3 + 2] = colour[2];
     }
+
+    /*
+     * The sky the surface mirrors, from the horizon up to straight overhead.
+     * Built the same way and for the same reason as the table above: the loop
+     * should never blend two colours when it can read one.
+     */
+    var zenith = options.skyZenith || [58, 110, 165];
+    var horizon = options.skyHorizon || [220, 234, 245];
+    var sky = new Uint8Array(256 * 3);
+    for (k = 0; k < 256; k++) {
+      var lift = k / 255;
+      sky[k * 3] = horizon[0] + (zenith[0] - horizon[0]) * lift;
+      sky[k * 3 + 1] = horizon[1] + (zenith[1] - horizon[1]) * lift;
+      sky[k * 3 + 2] = horizon[2] + (zenith[2] - horizon[2]) * lift;
+    }
+
+    /*
+     * What the steepest facet on this surface scores, so the reflection can be
+     * measured against it. The slope never exceeds `depth` — the profile is
+     * bounded by one and the uphill direction by unit length — so this is the
+     * most tilted the water ever gets.
+     *
+     * Zero when the water is flat, which is a real case: depth at 0 leaves
+     * every facet level, nothing to reflect off, and a divide by nothing.
+     */
+    var nzMin = 1 / Math.sqrt(depth * depth + 1);
+    var fresRef = Math.pow(1 - nzMin, FRESNEL_POWER);
+    var mirror = fresRef > 0 ? reflect / fresRef : 0;
+
+    // How far the bed slides under the water, in whole samples at each edge of
+    // the grid. Whole samples rather than a bilinear read between four of them:
+    // the step that saves is smaller than the one the enlargement to picture
+    // size smooths out anyway.
+    var refractX = clarity * REFRACT * (W - 1);
+    var refractY = clarity * REFRACT * (H - 1);
+    var caustic = CAUSTIC * clarity * depth;
 
     // The half-vector for the specular term. The picture has no perspective, so
     // the eye is straight out of the page and this is a constant — Blinn's
@@ -184,6 +275,10 @@
 
         var diff = 1;
         var spec = 0;
+        var refl = 0;
+        var skyStep = 0;
+        var focus = 0;
+        var bed = h;
 
         if (ripples) {
           var phi = (h - base) / interval;
@@ -238,6 +333,54 @@
             spec *= spec; spec *= spec; spec *= spec;   // ^8
             spec *= spec; spec *= spec; spec *= spec;   // ^64
           }
+
+          if (mirror > 0) {
+            // How much of this facet is mirror rather than window. Level water
+            // is all window; the flanks of the ripples are where it turns.
+            var tilt = 1 - nz;
+            refl = mirror * tilt * tilt;
+            if (refl > 1) refl = 1;
+
+            /*
+             * Which part of the sky lands in it. Reflecting a straight-down
+             * view off this facet gives a ray whose vertical component is
+             * 2*nz*nz - 1: pointing straight up on level water, which is the
+             * zenith, and out at the horizon on a facet at forty-five degrees.
+             * Below that would be looking under the horizon, which water seen
+             * from above never does, so it stops there.
+             *
+             * Only the steepness matters, not which way the facet faces. The
+             * part of the picture that has to know its direction is the sun's
+             * own reflection, and that is the glint above.
+             */
+            var rz = 2 * nz * nz - 1;
+            skyStep = rz > 0 ? Math.round(rz * 255) : 0;
+          }
+
+          if (clarity > 0) {
+            /*
+             * What is under the water, seen through it. The surface leans, so
+             * the ground below appears shifted the way the lean points — which
+             * is what makes a bed slide about as a wave passes over it.
+             *
+             * Clamped at the edges rather than wrapped: a wrap would show the
+             * far side of the map through the water along the margins.
+             */
+            var bx = i - Math.round(nx * refractX);
+            var by = j - Math.round(ny * refractY);
+            if (bx < 0) bx = 0; else if (bx > W - 1) bx = W - 1;
+            if (by < 0) by = 0; else if (by > H - 1) by = H - 1;
+            bed = src[by * W + bx];
+
+            /*
+             * The light a crest gathers. A crest is convex, so it works as a
+             * lens: cos(2*pi*phi) is positive exactly over one, and cubing it
+             * keeps what follows a band under the crest instead of a general
+             * lightening of everything.
+             */
+            var lens = Math.cos(TWO_PI * phi);
+            if (lens > 0) focus = caustic * lens * lens * lens;
+          }
         }
 
         /*
@@ -248,16 +391,28 @@
          * pale area over the summit that competes with them; at wash 0 the
          * water is one colour everywhere and only the light shapes it.
          */
-        var tone = 0.5 + wash * (t - 0.5);
+        var seen = bed === h ? t : (span > 0 ? (bed - grid.min) / span : 0);
+        var tone = 0.5 + wash * (seen - 0.5);
         var step = tone < 0 ? 0 : tone > 1 ? 255 : Math.round(tone * 255);
 
+        /*
+         * Through the water, then off it.
+         *
+         * The ground below is lit and given whatever light the crest above it
+         * gathered, then mixed with the sky by how much of this facet is
+         * mirror. The sun's glint goes on last and on top of the mix: it is the
+         * sun rather than the sky, and it has to survive landing on a flank
+         * that is already reflecting.
+         */
         var lit = ambient + (1 - ambient) * diff;
+        var glow = 255 * focus;
         var shine = 255 * glint * spec;
+        var clear = 1 - refl;
         var at = (row + i) * 4;
 
-        out[at] = lut[step * 3] * lit + shine;
-        out[at + 1] = lut[step * 3 + 1] * lit + shine;
-        out[at + 2] = lut[step * 3 + 2] * lit + shine;
+        out[at] = (lut[step * 3] * lit + glow) * clear + sky[skyStep * 3] * refl + shine;
+        out[at + 1] = (lut[step * 3 + 1] * lit + glow) * clear + sky[skyStep * 3 + 1] * refl + shine;
+        out[at + 2] = (lut[step * 3 + 2] * lit + glow) * clear + sky[skyStep * 3 + 2] * refl + shine;
         out[at + 3] = 255;
       }
     }
@@ -270,6 +425,9 @@
     SHINE: SHINE,
     AMBIENT: AMBIENT,
     FLAT: FLAT,
+    FRESNEL_POWER: FRESNEL_POWER,
+    REFRACT: REFRACT,
+    CAUSTIC: CAUSTIC,
     profile: profile,
     surface: surface
   };

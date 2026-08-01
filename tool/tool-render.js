@@ -338,7 +338,8 @@
   function surfaceCanvas(grid, palette, options) {
     var key = [options.key, grid.width, grid.height, paletteKey(palette),
       options.base, options.interval, options.depth, options.sharp,
-      options.wash, options.glint].join('|');
+      options.wash, options.glint, options.reflect, options.clarity,
+      (options.skyZenith || []).join(','), (options.skyHorizon || []).join(',')].join('|');
 
     if (surfaceMemo.key === key && surfaceMemo.canvas) return surfaceMemo.canvas;
 
@@ -349,7 +350,11 @@
       depth: options.depth,
       sharp: options.sharp,
       wash: options.wash,
-      glint: options.glint
+      glint: options.glint,
+      reflect: options.reflect,
+      clarity: options.clarity,
+      skyZenith: options.skyZenith,
+      skyHorizon: options.skyHorizon
     });
 
     var canvas = offscreen(grid.width, grid.height);
@@ -392,7 +397,11 @@
       depth: options.depth,
       sharp: options.sharp,
       wash: wash,
-      glint: options.glint
+      glint: options.glint,
+      reflect: options.reflect,
+      clarity: options.clarity,
+      skyZenith: options.skyZenith,
+      skyHorizon: options.skyHorizon
     };
 
     var layers = result.layers

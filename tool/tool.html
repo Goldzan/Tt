@@ -216,6 +216,46 @@
       <p class="hint">How hard the sun comes off the swell. The surface fills the map area, so a
         transparent background shows only in the margin.</p>
 
+      <h3>Realistic water</h3>
+
+      <label class="check">
+        <input type="checkbox" id="water-realistic" checked>
+        <span><b>Look into the water</b>
+          <span class="hint">Water is a window from straight above and a mirror at a glancing
+            angle, so the flats between the ripples are seen through and the steep flanks turn
+            reflective — which is why the sky arrives as rims along the waves and not as a sheen
+            over everything.</span></span>
+      </label>
+
+      <div id="water-real-rows">
+        <label class="field">
+          <span class="label">Reflection <span class="value" id="water-reflect-val">0.45</span></span>
+          <input type="range" id="water-reflect" min="0" max="1" step="0.05" value="0.45">
+        </label>
+
+        <label class="field">
+          <span class="label">Clarity <span class="value" id="water-clarity-val">0.50</span></span>
+          <input type="range" id="water-clarity" min="0" max="1" step="0.05" value="0.5">
+        </label>
+        <p class="hint">Clarity moves two things at once: how far the ground below slides as a
+          wave passes over it, and how brightly each crest gathers the light going through it
+          into a band underneath.</p>
+
+        <div class="row tight">
+          <label class="field grow">
+            <span class="label">Sky overhead</span>
+            <input type="color" id="water-sky-top" value="#3a6ea5">
+          </label>
+          <label class="field grow">
+            <span class="label">Sky at the horizon</span>
+            <input type="color" id="water-sky-low" value="#dceaf5">
+          </label>
+        </div>
+        <p class="hint">Seen from directly above there is no horizon in the picture to take a sky
+          from, so it is given here. The flattest water mirrors what is overhead; the steepest
+          flanks catch the horizon.</p>
+      </div>
+
       <h3>Crest lines</h3>
 
       <label class="check">
