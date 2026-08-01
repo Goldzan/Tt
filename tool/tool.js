@@ -43,9 +43,10 @@
   var state = {
     /* Which picture this is. 'contours' draws lines between heights; 'ascii'
      * draws the heights themselves as characters; 'words' fills the frame with
-     * words and lets their colour carry the height. All three share the
-     * elevation grid, the colours, the picture size and the download — only
-     * what is made of the ground differs. */
+     * words and lets their colour carry the height; 'water' reads the ground as
+     * a lit water surface and pushes every contour into a ripple across it. All
+     * four share the elevation grid, the colours, the picture size and the
+     * download — only what is made of the ground differs. */
     design: 'contours',
 
     lat: 46.8523,
@@ -103,6 +104,28 @@
     wordSeparator: Topo.ascii.SEPARATOR,
     wordCaps: true,
     wordWeight: 500,
+
+    /* The water design. Note what is *not* a setting here: how many ripples
+     * there are. A ripple is a contour — the surface is a wave in height whose
+     * crests fall on the levels — so the count is the level count, and it lives
+     * in the Terrain panel with every other design's reading of the ground. */
+    waterDepth: 0.55,
+    waterSharp: 0.45,
+    waterWash: 0.25,
+    waterGlint: 0.35,
+    waterLines: true,
+    waterWeight: 0.9,
+
+    /* What makes it a liquid rather than a lit solid: the flanks of the ripples
+     * mirror the sky while the flats between them are seen into, the ground
+     * below slides about as a wave passes over it, and each crest gathers a
+     * band of light beneath itself. The sky has to be given, because a picture
+     * of water from directly above has no horizon in it to take one from. */
+    waterRealistic: true,
+    waterReflect: 0.45,
+    waterClarity: 0.5,
+    waterSkyTop: '#3a6ea5',
+    waterSkyLow: '#dceaf5',
 
     scale: 1,
     filename: ''
@@ -202,6 +225,7 @@
   function isContours() { return state.design === 'contours'; }
   function isAscii() { return state.design === 'ascii'; }
   function isWords() { return state.design === 'words'; }
+  function isWater() { return state.design === 'water'; }
 
   /**
    * Is this a grid of characters?
@@ -211,6 +235,17 @@
    * trace, need the lettering face, and count what they drew the same way.
    */
   function usesCells() { return isAscii() || isWords(); }
+
+  /**
+   * Does this design need the contours traced?
+   *
+   * Several places below used to ask this by asking isContours(), which was the
+   * same question only while contours were the only design made of lines. The
+   * water design is the second — its ripples are the traced contours, displaced
+   * — so the question gets its own name rather than a longer disjunction
+   * repeated at each site.
+   */
+  function needsTrace() { return isContours() || isWater(); }
 
   /** The ASCII design's settings, for the preview and the download alike. */
   function asciiOptions() {
@@ -237,6 +272,32 @@
       weight: state.wordWeight,
       margin: state.margin,
       transparent: state.transparent
+    };
+  }
+
+  /** The water design's settings — one helper, so preview and PNG agree. */
+  function waterOptions() {
+    return {
+      depth: state.waterDepth,
+      sharp: state.waterSharp,
+      wash: state.waterWash,
+      glint: state.waterGlint,
+      lines: state.waterLines,
+      weight: state.waterWeight,
+      /* Zeroed rather than passed with a flag beside them. No mirror and no
+       * clarity is already the plain lit surface, so the renderer keeps one way
+       * of shading a sample and the checkbox is still an honest switch. */
+      reflect: state.waterRealistic ? state.waterReflect : 0,
+      clarity: state.waterRealistic ? state.waterClarity : 0,
+      skyZenith: palettes.parse(state.waterSkyTop),
+      skyHorizon: palettes.parse(state.waterSkyLow),
+      margin: state.margin,
+      transparent: state.transparent,
+      // What the terrain currently is, so the renderer can keep the shaded
+      // surface between repaints. It is passed rather than worked out there
+      // because this file already knows it, and fingerprinting the grid itself
+      // would cost more than the shading the memo is meant to save.
+      key: cache.terrainKey
     };
   }
 
@@ -337,7 +398,7 @@
   }
 
   function stats() {
-    if (!cache.grid || (isContours() && !cache.result)) {
+    if (!cache.grid || (needsTrace() && !cache.result)) {
       $('stats').textContent = '';
       return;
     }
@@ -351,7 +412,9 @@
       Math.round(cache.grid.min) + '–' + Math.round(cache.grid.max) + ' m',
       usesCells()
         ? (shape && shape.cols ? shape.cols + ' × ' + shape.rows + ' characters' : '')
-        : (result.interval ? Math.round(result.interval) + ' m between lines' : ''),
+        : (result.interval
+          ? Math.round(result.interval) + ' m between ' + (isWater() ? 'ripples' : 'lines')
+          : ''),
       usesCells() ? '' : result.pathCount + ' paths',
       Math.round(plan.metresPerSample) + ' m/sample at zoom ' + plan.zoom
     ].filter(Boolean).join(' · ');
@@ -399,7 +462,7 @@
       // The fetch owns the first half of the bar when a trace follows it, and
       // the whole of it when nothing does — otherwise the ASCII design's bar
       // would stop at the middle and vanish.
-      var share = isContours() ? 0.5 : 1;
+      var share = needsTrace() ? 0.5 : 1;
 
       terrain = elevation.fetchGrid(plan, {
         signal: terrainAbort.signal,
@@ -419,16 +482,17 @@
         if (!live()) return null;
 
         /*
-         * The ASCII design is finished at this point: it wants the grid and
-         * nothing else, and binning it into characters is a paint-stage job.
-         * The grid is returned because the next step treats a falsy result as
-         * "nothing happened" and would leave the status line mid-sentence.
+         * The grids of characters are finished at this point: they want the
+         * grid and nothing else, and binning it into cells is a paint-stage
+         * job. The grid is returned because the next step treats a falsy result
+         * as "nothing happened" and would leave the status line mid-sentence.
          *
-         * Flat ground stops a contour map — there is nothing to draw a line
-         * between — but it is a perfectly good picture in characters, so that
-         * refusal belongs to the contour branch rather than to both.
+         * Flat ground stops a design made of lines — there is nothing to draw
+         * one between, and no contours means no ripples either — but it is a
+         * perfectly good picture in characters, so that refusal belongs below
+         * this line rather than above it.
          */
-        if (usesCells()) return grid;
+        if (!needsTrace()) return grid;
 
         if (!(grid.max > grid.min)) {
           throw new Error('That area is flat — every sample reads ' +
@@ -486,7 +550,8 @@
     var size = exportSize();
     var made = isAscii() ? state.asciiCols + ' characters across'
       : isWords() ? state.wordCols + ' characters across'
-        : state.levels + ' lines';
+        : isWater() ? state.levels + ' ripples'
+          : state.levels + ' lines';
     var line = state.place + ' · ' + fmtDistance(state.widthM) + ' across · ' +
       made + ' · ' + size.width + ' × ' + size.height + ' px';
 
@@ -518,6 +583,12 @@
     if (isWords()) {
       return render.wordsGeometry(cache.grid, palette(), width, height, wordOptions());
     }
+    // The only design that wants both: the ripples are made from the trace, and
+    // the water they sit on is made from the elevation directly.
+    if (isWater()) {
+      return render.waterGeometry(traced || cache.result, cache.grid, palette(),
+        width, height, waterOptions());
+    }
     return render.geometry(traced || cache.result, palette(), width, height, {
       weight: state.weight,
       transparent: state.transparent,
@@ -531,8 +602,11 @@
    */
   function paint() {
     // The designs need different things to exist: a grid of characters needs
-    // only the ground, lines need the trace made from it.
-    if (isContours() ? !cache.result : !cache.grid) return;
+    // only the ground, lines need the trace made from it, and the water design
+    // is the one that needs both — a shaded surface off the elevation with the
+    // traced contours rippling over it.
+    if (!cache.grid) return;
+    if (needsTrace() && !cache.result) return;
 
     var design = designFrame();
     var spec = specFor(design.width, design.height);
@@ -559,7 +633,13 @@
     // of characters needs this as much as the lettering does — more, even,
     // since its column positions come from the face's advance, and a fallback
     // with a different one would misalign every column in the picture.
-    if ((spec.text || spec.kind !== 'contour') && !fontLoaded) ensureFont().then(paint);
+    //
+    // Asked as "which designs set type" rather than as "which design is this
+    // not": the water design draws no letters at all, and the question the
+    // other way round would send it off to wait for a face it never uses and
+    // then repaint the whole picture for nothing.
+    var setsType = !!spec.text || spec.kind === 'ascii' || spec.kind === 'words';
+    if (setsType && !fontLoaded) ensureFont().then(paint);
   }
 
   /* ----------------------------------------------------------------- export */
@@ -591,7 +671,8 @@
     $('download').disabled = true;
 
     /*
-     * Contours are traced again at the output size; characters are not.
+     * Designs made of lines are traced again at the output size; characters are
+     * not.
      *
      * The re-trace exists because vertex spacing is in output units, so an
      * enlarged preview would show its facets. A character grid has no such
@@ -599,8 +680,11 @@
      * width and the size that fills it both come from the output frame. So a
      * grid of characters downloads as the preview enlarged, exactly, for no
      * CPU at all.
+     *
+     * Asked as needsTrace() rather than as the absence of cells, so that a
+     * fifth design cannot land in the gap between the two questions.
      */
-    var made = usesCells()
+    var made = !needsTrace()
       ? Promise.resolve(null)
       : render.trace(cache.grid, frame, {
         levels: state.levels,
@@ -894,17 +978,27 @@
     // Not named `ascii`: that is the module at the top of this file, and
     // shadowing it here would hide it from everything below.
     var lines = isContours();
+    var traced = needsTrace();
 
     $('ascii-section').hidden = !isAscii();
     $('words-section').hidden = !isWords();
-    $('contour-terrain').hidden = !lines;
-    $('contour-tidy').hidden = !lines;
+    $('water-section').hidden = !isWater();
+
+    // How many levels to trace, and whether to drop the specks, are questions
+    // for any design made of lines. Thickness, index contours and the lettering
+    // are contour ideas the water design answers its own way or not at all.
+    $('contour-terrain').hidden = !traced;
+    $('contour-tidy').hidden = !traced;
     $('contour-colour').hidden = !lines;
     $('text-section').hidden = !lines;
 
-    // Why a big download is worth having differs, and the contour answer is not
+    // The slider is the same slider; what it counts is not, and a panel that
+    // said "Contour lines" over a picture of water would be lying about it.
+    $('levels-label').textContent = isWater() ? 'Ripples' : 'Contour lines';
+
+    // Why a big download is worth having differs, and the traced answer is not
     // true of characters — nothing is traced again.
-    $('download-note').textContent = lines
+    $('download-note').textContent = traced
       ? 'The contours are traced again at the full size, so a 4× file is ' +
         'genuinely sharper rather than an enlargement.'
       : 'The same characters, drawn larger — the grid does not change with the ' +
@@ -1091,15 +1185,29 @@
       radio.addEventListener('change', function () {
         if (!radio.checked) return;
         state.design = radio.value;
+
+        /*
+         * Water arrives with its own colours, because on the default cream
+         * paper and black ink it would be a pencil drawing of a sea rather than
+         * a sea. Adopting the preset rather than quietly overriding the palette
+         * is what keeps the panel honest: the swatch that lights up is the one
+         * being drawn, the background picker moves to match, and any other
+         * palette is still one click away afterwards.
+         *
+         * After state.design, which adoptPreset reads on its way through
+         * renderPalettes and indexSettings, and before anything paints.
+         */
+        if (isWater()) adoptPreset('ocean');
+
         syncDesign();
         /*
-         * A repaint, not a rerun. Both designs are made from the same elevation
+         * A repaint, not a rerun. Every design is made from the same elevation
          * grid, and it is already in hand — switching is a frame, not a
-         * download. The one case that needs more is arriving in contour mode
-         * with no trace yet, which paint() declines to draw and run() then
-         * supplies.
+         * download. The one case that needs more is arriving at a design made
+         * of lines with no trace yet, which paint() declines to draw and run()
+         * then supplies.
          */
-        if (isContours() && !cache.result) { schedule(); return; }
+        if (needsTrace() && !cache.result) { schedule(); return; }
         repaint();
       });
     });
@@ -1166,6 +1274,81 @@
     $('word-weight').addEventListener('input', function () {
       state.wordWeight = parseInt($('word-weight').value, 10);
       $('word-weight-val').textContent = state.wordWeight;
+      repaint();
+    });
+
+    /* ---------------------------------------------------------------- water */
+
+    /* The wave controls rebuild every vertex on the map and the surface ones
+     * reshade the whole grid, so they wait for a pause the way the typed boxes
+     * do rather than doing that work for each notch of a dragged slider. */
+    var waterDebounce = null;
+    function waterChanged() {
+      clearTimeout(waterDebounce);
+      waterDebounce = setTimeout(repaint, 120);
+    }
+
+    $('water-depth').addEventListener('input', function () {
+      state.waterDepth = parseFloat($('water-depth').value);
+      $('water-depth-val').textContent = state.waterDepth.toFixed(2);
+      waterChanged();
+    });
+
+    $('water-sharp').addEventListener('input', function () {
+      state.waterSharp = parseFloat($('water-sharp').value);
+      $('water-sharp-val').textContent = state.waterSharp.toFixed(2);
+      waterChanged();
+    });
+
+    $('water-wash').addEventListener('input', function () {
+      state.waterWash = parseFloat($('water-wash').value);
+      $('water-wash-val').textContent = state.waterWash.toFixed(2);
+      waterChanged();
+    });
+
+    $('water-glint').addEventListener('input', function () {
+      state.waterGlint = parseFloat($('water-glint').value);
+      $('water-glint-val').textContent = state.waterGlint.toFixed(2);
+      waterChanged();
+    });
+
+    $('water-realistic').addEventListener('change', function () {
+      state.waterRealistic = $('water-realistic').checked;
+      $('water-real-rows').hidden = !state.waterRealistic;
+      waterChanged();
+    });
+
+    $('water-reflect').addEventListener('input', function () {
+      state.waterReflect = parseFloat($('water-reflect').value);
+      $('water-reflect-val').textContent = state.waterReflect.toFixed(2);
+      waterChanged();
+    });
+
+    $('water-clarity').addEventListener('input', function () {
+      state.waterClarity = parseFloat($('water-clarity').value);
+      $('water-clarity-val').textContent = state.waterClarity.toFixed(2);
+      waterChanged();
+    });
+
+    ['water-sky-top', 'water-sky-low'].forEach(function (id) {
+      $(id).addEventListener('input', function () {
+        if (id === 'water-sky-top') state.waterSkyTop = $(id).value;
+        else state.waterSkyLow = $(id).value;
+        waterChanged();
+      });
+    });
+
+    // The crest lines are drawn over the surface rather than into it, so these
+    // two restroke and leave the shading alone — no reason to make them wait.
+    $('water-lines').addEventListener('change', function () {
+      state.waterLines = $('water-lines').checked;
+      $('water-line-rows').hidden = !state.waterLines;
+      repaint();
+    });
+
+    $('water-weight').addEventListener('input', function () {
+      state.waterWeight = parseFloat($('water-weight').value);
+      $('water-weight-val').textContent = state.waterWeight.toFixed(1) + '×';
       repaint();
     });
 
@@ -1297,6 +1480,28 @@
     $('word-caps').checked = state.wordCaps;
     $('word-weight').value = state.wordWeight;
     $('word-weight-val').textContent = state.wordWeight;
+
+    $('water-depth').value = state.waterDepth;
+    $('water-depth-val').textContent = state.waterDepth.toFixed(2);
+    $('water-sharp').value = state.waterSharp;
+    $('water-sharp-val').textContent = state.waterSharp.toFixed(2);
+    $('water-wash').value = state.waterWash;
+    $('water-wash-val').textContent = state.waterWash.toFixed(2);
+    $('water-glint').value = state.waterGlint;
+    $('water-glint-val').textContent = state.waterGlint.toFixed(2);
+    $('water-realistic').checked = state.waterRealistic;
+    $('water-real-rows').hidden = !state.waterRealistic;
+    $('water-reflect').value = state.waterReflect;
+    $('water-reflect-val').textContent = state.waterReflect.toFixed(2);
+    $('water-clarity').value = state.waterClarity;
+    $('water-clarity-val').textContent = state.waterClarity.toFixed(2);
+    $('water-sky-top').value = state.waterSkyTop;
+    $('water-sky-low').value = state.waterSkyLow;
+    $('water-lines').checked = state.waterLines;
+    $('water-line-rows').hidden = !state.waterLines;
+    $('water-weight').value = state.waterWeight;
+    $('water-weight-val').textContent = state.waterWeight.toFixed(1) + '×';
+
     syncDesign();
 
     $('custom-toggle').setAttribute('aria-pressed', String(state.custom));

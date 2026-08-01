@@ -1110,7 +1110,9 @@ input[type=color]:disabled { opacity: .4; cursor: not-allowed; }
 .swatch b:nth-child(2) { width: 78%; }
 .swatch b:nth-child(3) { width: 56%; }
 
-.modes { display: flex; gap: 14px; margin-bottom: 12px; font-size: 13.5px; }
+/* Wrapping, because the design row has outgrown one line of the control
+ * column and a fourth choice would otherwise be pushed off the end of it. */
+.modes { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-bottom: 12px; font-size: 13.5px; }
 .modes label { display: flex; gap: 6px; align-items: center; cursor: pointer; }
 .modes input { accent-color: var(--accent); }
 
@@ -1201,9 +1203,11 @@ footer a { color: inherit; }
         <label><input type="radio" name="design" value="contours" checked> Contour lines</label>
         <label><input type="radio" name="design" value="ascii"> ASCII art</label>
         <label><input type="radio" name="design" value="words"> Word block</label>
+        <label><input type="radio" name="design" value="water"> Water</label>
       </div>
       <p class="hint" id="design-hint">Lines drawn between heights; the heights themselves
-        set as characters; or a block of words whose colour is the height.</p>
+        set as characters; a block of words whose colour is the height; or the ground read
+        as water, with every contour a ripple across it.</p>
     </section>
 
     <section class="panel">
@@ -1247,7 +1251,8 @@ footer a { color: inherit; }
 
       <div id="contour-terrain">
         <label class="field">
-          <span class="label">Contour lines <span class="value" id="levels-val">20</span></span>
+          <span class="label"><span id="levels-label">Contour lines</span>
+            <span class="value" id="levels-val">20</span></span>
           <input type="range" id="levels" min="5" max="60" step="1" value="20">
         </label>
       </div>
@@ -1337,6 +1342,99 @@ footer a { color: inherit; }
         <span class="label">Weight <span class="value" id="word-weight-val">500</span></span>
         <input type="range" id="word-weight" min="200" max="900" step="50" value="500">
       </label>
+    </section>
+
+    <section class="panel" id="water-section" hidden>
+      <h2>Water</h2>
+      <p class="hint">A contour line is a level set — every point on it is at the same height —
+        so a wave written in height alone crests exactly along one. Each contour is the top of a
+        ripple, and the water falls away to a trough halfway to the next. Lit from the upper
+        left; a still picture, not an animation.</p>
+      <p class="hint">How many ripples there are is how many contours there are, on the
+        <b>Terrain</b> panel above.</p>
+
+      <label class="field">
+        <span class="label">Ripple depth <span class="value" id="water-depth-val">0.55</span></span>
+        <input type="range" id="water-depth" min="0" max="1.5" step="0.05" value="0.55">
+      </label>
+
+      <label class="field">
+        <span class="label">Crest sharpness <span class="value" id="water-sharp-val">0.45</span></span>
+        <input type="range" id="water-sharp" min="0" max="1" step="0.05" value="0.45">
+      </label>
+      <p class="hint">How raised the waves are, and whether they read as a long clean swell or
+        as a chop with edges on it. Neither moves a crest off its contour.</p>
+
+      <label class="field">
+        <span class="label">Depth tint <span class="value" id="water-wash-val">0.25</span></span>
+        <input type="range" id="water-wash" min="0" max="1" step="0.05" value="0.25">
+      </label>
+      <p class="hint">How much the height still shows in the colour. At zero the water is one
+        colour everywhere and only the light shapes it; turn it up and the valleys go deep and
+        the summits pale, the way the other designs read the ground.</p>
+
+      <label class="field">
+        <span class="label">Sun glint <span class="value" id="water-glint-val">0.35</span></span>
+        <input type="range" id="water-glint" min="0" max="1" step="0.05" value="0.35">
+      </label>
+      <p class="hint">How hard the sun comes off the swell. The surface fills the map area, so a
+        transparent background shows only in the margin.</p>
+
+      <h3>Realistic water</h3>
+
+      <label class="check">
+        <input type="checkbox" id="water-realistic" checked>
+        <span><b>Look into the water</b>
+          <span class="hint">Water is a window from straight above and a mirror at a glancing
+            angle, so the flats between the ripples are seen through and the steep flanks turn
+            reflective — which is why the sky arrives as rims along the waves and not as a sheen
+            over everything.</span></span>
+      </label>
+
+      <div id="water-real-rows">
+        <label class="field">
+          <span class="label">Reflection <span class="value" id="water-reflect-val">0.45</span></span>
+          <input type="range" id="water-reflect" min="0" max="1" step="0.05" value="0.45">
+        </label>
+
+        <label class="field">
+          <span class="label">Clarity <span class="value" id="water-clarity-val">0.50</span></span>
+          <input type="range" id="water-clarity" min="0" max="1" step="0.05" value="0.5">
+        </label>
+        <p class="hint">Clarity moves two things at once: how far the ground below slides as a
+          wave passes over it, and how brightly each crest gathers the light going through it
+          into a band underneath.</p>
+
+        <div class="row tight">
+          <label class="field grow">
+            <span class="label">Sky overhead</span>
+            <input type="color" id="water-sky-top" value="#3a6ea5">
+          </label>
+          <label class="field grow">
+            <span class="label">Sky at the horizon</span>
+            <input type="color" id="water-sky-low" value="#dceaf5">
+          </label>
+        </div>
+        <p class="hint">Seen from directly above there is no horizon in the picture to take a sky
+          from, so it is given here. The flattest water mirrors what is overhead; the steepest
+          flanks catch the horizon.</p>
+      </div>
+
+      <h3>Crest lines</h3>
+
+      <label class="check">
+        <input type="checkbox" id="water-lines" checked>
+        <span><b>Draw the contours along the crests</b>
+          <span class="hint">The traced lines themselves, exactly where the shading has raised
+            the water — the glint on the top of each wave.</span></span>
+      </label>
+
+      <div id="water-line-rows">
+        <label class="field">
+          <span class="label">Crest thickness <span class="value" id="water-weight-val">0.9×</span></span>
+          <input type="range" id="water-weight" min="0.2" max="4" step="0.1" value="0.9">
+        </label>
+      </div>
     </section>
 
     <section class="panel">
@@ -2585,6 +2683,10 @@ footer a { color: inherit; }
     isIndex: isIndex,
     inkFor: inkFor,
     inkAt: inkAt,
+    // Exported for the designs that shade one colour towards another — the
+    // water ripples take a crest and a trough either side of their own ink.
+    // It adds no palette, so it adds nothing to what the shop can sell.
+    blend: blend,
     MIN_TONE: MIN_TONE,
     widthFor: widthFor,
     css: css,
@@ -3323,6 +3425,445 @@ footer a { color: inherit; }
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 </script>
 <script>
+/* src/water.js */
+/*
+ * water.js — the elevation grid as a water surface, one ripple per contour.
+ *
+ * The other designs in this tool draw the ground: lines between heights,
+ * characters standing for heights, words coloured by height. This one pretends
+ * the ground is water, and the trick that makes it work is that a contour line
+ * is already a level set — every point on it is at the same height. So a wave
+ * written as a function of height alone has its crest exactly along one:
+ *
+ *     phi = (height - lowest level) / the interval between levels
+ *     W   = cos(2 * pi * phi)
+ *
+ * W peaks wherever phi is a whole number, which is wherever a contour runs, and
+ * troughs exactly halfway between neighbouring ones. Shade that and every
+ * contour becomes the ridge of a ripple, closing in rings around a summit the
+ * way rings close around a stone dropped in a pond. Nothing is displaced and
+ * nothing is random: the crests cannot drift off the lines, because both are
+ * worked out from the same levels the tracer used.
+ *
+ * The tempting alternative — and the first version of this file — was to shade
+ * the terrain's own slopes and wobble the contour lines separately on top. That
+ * gives two unrelated wave effects, a sheen running across the picture that owes
+ * nothing to the contours and a line that is a ripple only in the sense that it
+ * is bent. Neither makes a contour line into the crest of anything.
+ *
+ * No DOM references — Node can require() this and check the maths without a
+ * canvas. That is also why surface() takes a tint callback rather than reaching
+ * for palettes.js: no module under src/ depends on another, and keeping it that
+ * way means this one can be exercised with a two-line stub.
+ */
+(function (global) {
+  'use strict';
+
+  var Topo = global.Topo || (global.Topo = {});
+
+  var TWO_PI = Math.PI * 2;
+
+  /*
+   * Where the sun is, in the picture's own coordinates (x right, y *down*, z
+   * out of the page). Upper left, about 38 degrees above the surface.
+   *
+   * Upper left is the cartographic convention and it is not decoration: relief
+   * lit from below reads as inverted, so a light from the lower right turns
+   * every swell into a hollow and the whole picture goes inside out.
+   */
+  var LIGHT = normalise3(-0.55, -0.60, 0.58);
+
+  /*
+   * How tight the glint is. Two squarings short of 64 the sheen spreads over
+   * whole hillsides and reads as polished plastic; two beyond it the glints are
+   * a sample or two across, and the enlargement from grid resolution to the
+   * picture turns them into speckle. At 64 a glint is a handful of samples
+   * wide, which is what survives that enlargement as a highlight.
+   *
+   * Evaluated as six squarings rather than Math.pow — about ten times faster
+   * over three quarters of a million samples, and exactly reproducible.
+   */
+  var SHINE = 64;
+
+  /* How much of the shading is there before the sun reaches it. Below about
+   * 0.35 the troughs sink to black on a dark palette and take the colour of the
+   * water with them. */
+  var AMBIENT = 0.45;
+
+  /*
+   * The gradient below which a ripple fades out, as a fraction of the average
+   * across the map.
+   *
+   * Ripples are given the same cross-section wherever they are, which means
+   * dividing the slope by its own length — and that is undefined on ground with
+   * no slope at all. Flattening the divisor here instead fades the wave away on
+   * still water, which is the right answer rather than a dodge: level ground
+   * has no contours crossing it, so it should have no crests either.
+   */
+  var FLAT = 0.1;
+
+  /*
+   * How sharply the mirror comes on as a facet tilts away from the eye.
+   *
+   * Water reflects almost nothing when you look straight down into it and
+   * everything at a grazing angle, and Schlick's approximation puts that at
+   * (1 - cos)^5 over a base of about 2%. Taken literally that is useless here:
+   * this is a plan view, so the eye is straight overhead, and the steepest
+   * facet a ripple reaches is under thirty degrees — where the real answer is
+   * two per cent and a reflection control would do nothing at any setting.
+   *
+   * What is worth keeping is the *shape* — clear on the flats, rising fast on
+   * the flanks — so the exponent is dropped to two and the whole curve is
+   * normalised against the steepest facet this surface actually has. A setting
+   * of 1 then means "as reflective as this water ever gets" rather than a
+   * number of per cent nobody can see. Squared rather than linear because the
+   * point is the contrast: the mirror belongs on the flanks and the flats
+   * belong clear.
+   */
+  var FRESNEL_POWER = 2;
+
+  /*
+   * How far the bed shifts under the steepest part of a wave, as a fraction of
+   * the map's width. About one per cent — enough that the ground visibly slides
+   * as it passes under a ripple, not so much that it stops looking like the
+   * same ground.
+   */
+  var REFRACT = 0.012;
+
+  /*
+   * How bright the light gathered under a crest gets.
+   *
+   * A crest is convex, so it works as a lens and focuses what passes through it
+   * into a band below. This is that band's brightness at full clarity — an
+   * approximation drawn from the wave's own curvature rather than any tracing
+   * of light, so it lands under every crest alike however deep the water is
+   * there. Worth knowing before anyone tries to extend it into something it is
+   * not.
+   */
+  var CAUSTIC = 0.55;
+
+  function normalise3(x, y, z) {
+    var len = Math.sqrt(x * x + y * y + z * z) || 1;
+    return [x / len, y / len, z / len];
+  }
+
+  /**
+   * The slope of one ripple across itself, at a height phi levels above the
+   * lowest contour.
+   *
+   * The surface is cos(2*pi*phi), so its slope is proportional to sin(2*pi*phi):
+   * nothing on the crest, nothing in the trough, steepest on the flanks between.
+   * The zero at every whole phi is the whole design — that is the contour line,
+   * and it is the top of the wave.
+   *
+   * `sharp` bends the profile without moving it. Raising the sine's magnitude to
+   * a power below one lifts the flanks towards their peak sooner, so the crest
+   * narrows to an edge and the trough broadens out — a chop rather than a swell.
+   * A power is used rather than any of the obvious reshapings that add terms,
+   * because those move the zero, and a crest that has moved is no longer on the
+   * line it is supposed to be the ripple of.
+   */
+  function profile(phi, sharp) {
+    var s = Math.sin(TWO_PI * phi);
+    var power = 1 - 0.6 * (sharp || 0);
+    if (power === 1) return s;
+    return s < 0 ? -Math.pow(-s, power) : Math.pow(s, power);
+  }
+
+  /**
+   * Shade the elevation grid as water rippling one crest per contour.
+   *
+   * Options are `tint` — a function from height 0..1 to [r, g, b], which is how
+   * the palette gets in without this file knowing about palettes — plus `base`
+   * and `interval`, the lowest contour level and the spacing between levels,
+   * and then `depth`, `sharp`, `wash`, `glint` and `ambient`.
+   *
+   * `reflect`, `clarity`, `skyZenith` and `skyHorizon` are what make it a
+   * liquid rather than a shaded solid: how much of the sky the flanks mirror,
+   * how far you see into the flats, and what the sky is made of. All three
+   * effects fall away to nothing at zero, so a caller with them switched off
+   * gets the plain lit surface and this function still has one path through it.
+   *
+   * base and interval are the tracer's own, handed in rather than worked out
+   * again from the grid's range. They agree today, but two files deriving the
+   * same levels separately is exactly how the crests and the lines would come
+   * quietly apart later.
+   *
+   * Returns { width, height, data }, the data an RGBA Uint8ClampedArray at the
+   * grid's own resolution. Turning that into an ImageData and stretching it over
+   * the picture is the caller's business, and belongs there: the array this
+   * returns does not know what size the picture is, which is precisely why the
+   * preview and the download can share one.
+   */
+  function surface(grid, options) {
+    options = options || {};
+
+    var W = grid.width;
+    var H = grid.height;
+    var src = grid.data;
+    var span = grid.max - grid.min;
+
+    var interval = options.interval;
+    var base = options.base === undefined ? grid.min : options.base;
+    var depth = options.depth === undefined ? 0.55 : options.depth;
+    var sharp = options.sharp === undefined ? 0.45 : options.sharp;
+    var wash = options.wash === undefined ? 0.25 : options.wash;
+    var glint = options.glint === undefined ? 0.35 : options.glint;
+    var ambient = options.ambient === undefined ? AMBIENT : options.ambient;
+
+    /*
+     * There is no `realistic` flag here on purpose. The caller zeroes these two
+     * when its checkbox is off, and zero is already "no mirror, no wobble, no
+     * gathered light" — so the panel gets an honest switch and this file keeps
+     * one way of shading a sample rather than two that have to be kept in step.
+     */
+    var reflect = options.reflect || 0;
+    var clarity = options.clarity || 0;
+
+    /*
+     * The colour of the water, worked out 256 times instead of once per sample.
+     * A palette's lookup walks a list of stops, and at three quarters of a
+     * million samples that walk is most of the pass; the table is 768 bytes and
+     * finer than an eight-bit channel can show anyway.
+     */
+    var tint = options.tint || function () { return [0, 0, 0]; };
+    var lut = new Uint8Array(256 * 3);
+    var k;
+    for (k = 0; k < 256; k++) {
+      var colour = tint(k / 255);
+      lut[k * 3] = colour[0];
+      lut[k * 3 + 1] = colour[1];
+      lut[k * 3 + 2] = colour[2];
+    }
+
+    /*
+     * The sky the surface mirrors, from the horizon up to straight overhead.
+     * Built the same way and for the same reason as the table above: the loop
+     * should never blend two colours when it can read one.
+     */
+    var zenith = options.skyZenith || [58, 110, 165];
+    var horizon = options.skyHorizon || [220, 234, 245];
+    var sky = new Uint8Array(256 * 3);
+    for (k = 0; k < 256; k++) {
+      var lift = k / 255;
+      sky[k * 3] = horizon[0] + (zenith[0] - horizon[0]) * lift;
+      sky[k * 3 + 1] = horizon[1] + (zenith[1] - horizon[1]) * lift;
+      sky[k * 3 + 2] = horizon[2] + (zenith[2] - horizon[2]) * lift;
+    }
+
+    /*
+     * What the steepest facet on this surface scores, so the reflection can be
+     * measured against it. The slope never exceeds `depth` — the profile is
+     * bounded by one and the uphill direction by unit length — so this is the
+     * most tilted the water ever gets.
+     *
+     * Zero when the water is flat, which is a real case: depth at 0 leaves
+     * every facet level, nothing to reflect off, and a divide by nothing.
+     */
+    var nzMin = 1 / Math.sqrt(depth * depth + 1);
+    var fresRef = Math.pow(1 - nzMin, FRESNEL_POWER);
+    var mirror = fresRef > 0 ? reflect / fresRef : 0;
+
+    // How far the bed slides under the water, in whole samples at each edge of
+    // the grid. Whole samples rather than a bilinear read between four of them:
+    // the step that saves is smaller than the one the enlargement to picture
+    // size smooths out anyway.
+    var refractX = clarity * REFRACT * (W - 1);
+    var refractY = clarity * REFRACT * (H - 1);
+    var caustic = CAUSTIC * clarity * depth;
+
+    // The half-vector for the specular term. The picture has no perspective, so
+    // the eye is straight out of the page and this is a constant — Blinn's
+    // half-vector rather than a mirrored reflection: cheaper, and it gives a
+    // broader highlight, which is what an enlarged raster needs.
+    var half = normalise3(LIGHT[0], LIGHT[1], LIGHT[2] + 1);
+
+    // Still water: no levels to ripple between. Shaded flat rather than
+    // refused, so a caller that gets here on flat ground draws a plain wash
+    // instead of dividing by nothing.
+    var ripples = interval > 0;
+
+    // What counts as a slope worth rippling, in contour crossings per map
+    // width — the same units the gradient below comes out in.
+    var floor = ripples ? FLAT * (span / interval) : 0;
+
+    var out = new Uint8ClampedArray(W * H * 4);
+
+    for (var j = 0; j < H; j++) {
+      var up = (j > 0 ? j - 1 : 0) * W;
+      var down = (j < H - 1 ? j + 1 : H - 1) * W;
+      var row = j * W;
+
+      for (var i = 0; i < W; i++) {
+        var left = i > 0 ? i - 1 : 0;
+        var right = i < W - 1 ? i + 1 : W - 1;
+
+        var h = src[row + i];
+        var t = span > 0 ? (h - grid.min) / span : 0;
+
+        var diff = 1;
+        var spec = 0;
+        var refl = 0;
+        var skyStep = 0;
+        var focus = 0;
+        var bed = h;
+
+        if (ripples) {
+          var phi = (h - base) / interval;
+
+          /*
+           * How fast the levels go by, measured across the map rather than
+           * across the samples.
+           *
+           * Multiplying by (W - 1) turns a difference between neighbours into a
+           * gradient per unit of map, and that is what keeps the Terrain detail
+           * dropdown from changing how the water looks: at Low there are 384
+           * samples where High has 1024, so the raw difference between
+           * neighbours is nearly three times larger. In these units the length
+           * below is literally how many contours you cross per map width.
+           */
+          var gx = (src[row + right] - src[row + left]) * 0.5 * (W - 1) / interval;
+          var gy = (src[down + i] - src[up + i]) * 0.5 * (H - 1) / interval;
+          var glen = Math.sqrt(gx * gx + gy * gy);
+          var divisor = glen > floor ? glen : floor;
+
+          /*
+           * The uphill direction, at unit length wherever there is a slope
+           * worth speaking of. Unit length is what gives every ripple the same
+           * cross-section however tightly the contours are packed — which is
+           * what makes them read as ripples on water rather than as a hillshade
+           * of the ground, where the steep places are simply darker.
+           */
+          var dirx = divisor > 0 ? gx / divisor : 0;
+          var diry = divisor > 0 ? gy / divisor : 0;
+
+          /*
+           * Just uphill of a crest the water is falling away behind you, so the
+           * surface there tilts along the direction you are walking — hence the
+           * normal leaning the same way as the uphill vector rather than
+           * against it. Get this sign wrong and every ripple is a groove.
+           */
+          var slope = depth * profile(phi, sharp);
+          var nx = dirx * slope;
+          var ny = diry * slope;
+          var nlen = Math.sqrt(nx * nx + ny * ny + 1) || 1;
+          nx /= nlen;
+          ny /= nlen;
+          var nz = 1 / nlen;
+
+          diff = nx * LIGHT[0] + ny * LIGHT[1] + nz * LIGHT[2];
+          if (diff < 0) diff = 0;
+
+          spec = nx * half[0] + ny * half[1] + nz * half[2];
+          if (spec < 0) {
+            spec = 0;
+          } else {
+            spec *= spec; spec *= spec; spec *= spec;   // ^8
+            spec *= spec; spec *= spec; spec *= spec;   // ^64
+          }
+
+          if (mirror > 0) {
+            // How much of this facet is mirror rather than window. Level water
+            // is all window; the flanks of the ripples are where it turns.
+            var tilt = 1 - nz;
+            refl = mirror * tilt * tilt;
+            if (refl > 1) refl = 1;
+
+            /*
+             * Which part of the sky lands in it. Reflecting a straight-down
+             * view off this facet gives a ray whose vertical component is
+             * 2*nz*nz - 1: pointing straight up on level water, which is the
+             * zenith, and out at the horizon on a facet at forty-five degrees.
+             * Below that would be looking under the horizon, which water seen
+             * from above never does, so it stops there.
+             *
+             * Only the steepness matters, not which way the facet faces. The
+             * part of the picture that has to know its direction is the sun's
+             * own reflection, and that is the glint above.
+             */
+            var rz = 2 * nz * nz - 1;
+            skyStep = rz > 0 ? Math.round(rz * 255) : 0;
+          }
+
+          if (clarity > 0) {
+            /*
+             * What is under the water, seen through it. The surface leans, so
+             * the ground below appears shifted the way the lean points — which
+             * is what makes a bed slide about as a wave passes over it.
+             *
+             * Clamped at the edges rather than wrapped: a wrap would show the
+             * far side of the map through the water along the margins.
+             */
+            var bx = i - Math.round(nx * refractX);
+            var by = j - Math.round(ny * refractY);
+            if (bx < 0) bx = 0; else if (bx > W - 1) bx = W - 1;
+            if (by < 0) by = 0; else if (by > H - 1) by = H - 1;
+            bed = src[by * W + bx];
+
+            /*
+             * The light a crest gathers. A crest is convex, so it works as a
+             * lens: cos(2*pi*phi) is positive exactly over one, and cubing it
+             * keeps what follows a band under the crest instead of a general
+             * lightening of everything.
+             */
+            var lens = Math.cos(TWO_PI * phi);
+            if (lens > 0) focus = caustic * lens * lens * lens;
+          }
+        }
+
+        /*
+         * How much the height still shows in the colour.
+         *
+         * Pulled towards the middle of the ramp rather than used straight. The
+         * ripples are the thing to look at, and a full depth ramp puts a large
+         * pale area over the summit that competes with them; at wash 0 the
+         * water is one colour everywhere and only the light shapes it.
+         */
+        var seen = bed === h ? t : (span > 0 ? (bed - grid.min) / span : 0);
+        var tone = 0.5 + wash * (seen - 0.5);
+        var step = tone < 0 ? 0 : tone > 1 ? 255 : Math.round(tone * 255);
+
+        /*
+         * Through the water, then off it.
+         *
+         * The ground below is lit and given whatever light the crest above it
+         * gathered, then mixed with the sky by how much of this facet is
+         * mirror. The sun's glint goes on last and on top of the mix: it is the
+         * sun rather than the sky, and it has to survive landing on a flank
+         * that is already reflecting.
+         */
+        var lit = ambient + (1 - ambient) * diff;
+        var glow = 255 * focus;
+        var shine = 255 * glint * spec;
+        var clear = 1 - refl;
+        var at = (row + i) * 4;
+
+        out[at] = (lut[step * 3] * lit + glow) * clear + sky[skyStep * 3] * refl + shine;
+        out[at + 1] = (lut[step * 3 + 1] * lit + glow) * clear + sky[skyStep * 3 + 1] * refl + shine;
+        out[at + 2] = (lut[step * 3 + 2] * lit + glow) * clear + sky[skyStep * 3 + 2] * refl + shine;
+        out[at + 3] = 255;
+      }
+    }
+
+    return { width: W, height: H, data: out };
+  }
+
+  Topo.water = {
+    LIGHT: LIGHT,
+    SHINE: SHINE,
+    AMBIENT: AMBIENT,
+    FLAT: FLAT,
+    FRESNEL_POWER: FRESNEL_POWER,
+    REFRACT: REFRACT,
+    CAUSTIC: CAUSTIC,
+    profile: profile,
+    surface: surface
+  };
+
+  if (typeof module !== 'undefined' && module.exports) module.exports = Topo.water;
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+</script>
+<script>
 /* src/search.js */
 /*
  * search.js — place lookup via OpenStreetMap's Nominatim geocoder.
@@ -3731,6 +4272,18 @@ footer a { color: inherit; }
       background: [24, 18, 38],
       ramp: [[62, 44, 110], [128, 66, 138], [198, 92, 120], [244, 148, 110]],
       indexEvery: 0
+    },
+    {
+      id: 'ocean',
+      name: 'Ocean',
+      background: [6, 18, 32],
+      /* Deep water up to a lit crest — the water design's own colours, and the
+       * one the design adopts when it is picked. Five stops rather than the
+       * four the other ramps use because the shaded surface spends most of the
+       * picture in the middle of the ramp, and the extra stop is what keeps the
+       * teal from flattening into one band across the whole swell. */
+      ramp: [[8, 26, 52], [16, 62, 96], [26, 116, 138], [104, 186, 190], [214, 240, 236]],
+      indexEvery: 0
     }
   ];
 
@@ -4088,6 +4641,158 @@ footer a { color: inherit; }
     };
   }
 
+  /* --------------------------------------------------------------- water */
+
+  /*
+   * The shaded surface, kept between repaints.
+   *
+   * One entry, because only one is ever wanted: the picture on screen. The
+   * shading is a pass over every sample of the elevation grid — three quarters
+   * of a million of them at the High detail setting, twenty or thirty
+   * milliseconds — which is the same order as the character designs already pay
+   * on the repaint path, so it could just be redone each time.
+   *
+   * It is kept anyway, for a reason those designs do not have: the crest lines
+   * are drawn over the surface rather than into it, so switching them off or
+   * changing their thickness leaves the water underneath exactly as it was.
+   * Without this, restroking a hairline would pay thirty milliseconds to redraw
+   * an identical wash.
+   */
+  var surfaceMemo = { key: '', canvas: null };
+
+  /* Enough of a palette to tell one from another. The colours are what the
+   * wash is made of, so a memo that ignored them would leave yesterday's
+   * colour on screen — the exact failure the tool's caches exist to avoid, in
+   * the other direction. */
+  function paletteKey(palette) {
+    return [
+      (palette.ramp || []).join(';'),
+      (palette.ink || []).join(','),
+      (palette.background || []).join(',')
+    ].join('|');
+  }
+
+  /**
+   * The water surface as a canvas at the elevation grid's own resolution.
+   *
+   * At the grid's resolution and at nothing else — this canvas does not know
+   * how big the picture is. That is what makes the preview and the 4000 px
+   * download share one: the same pixels are stretched over the map rectangle at
+   * both sizes, so their agreement is a fact rather than a hope.
+   *
+   * `key` is the caller's own name for the terrain, because tool.js already
+   * keeps one. Fingerprinting the grid here instead would mean hashing three
+   * quarters of a million floats, which costs more than redoing the shading it
+   * was meant to save.
+   */
+  function surfaceCanvas(grid, palette, options) {
+    var key = [options.key, grid.width, grid.height, paletteKey(palette),
+      options.base, options.interval, options.depth, options.sharp,
+      options.wash, options.glint, options.reflect, options.clarity,
+      (options.skyZenith || []).join(','), (options.skyHorizon || []).join(',')].join('|');
+
+    if (surfaceMemo.key === key && surfaceMemo.canvas) return surfaceMemo.canvas;
+
+    var shaded = Topo.water.surface(grid, {
+      tint: function (t) { return Topo.palettes.inkAt(palette, t); },
+      base: options.base,
+      interval: options.interval,
+      depth: options.depth,
+      sharp: options.sharp,
+      wash: options.wash,
+      glint: options.glint,
+      reflect: options.reflect,
+      clarity: options.clarity,
+      skyZenith: options.skyZenith,
+      skyHorizon: options.skyHorizon
+    });
+
+    var canvas = offscreen(grid.width, grid.height);
+    var ctx = canvas.getContext('2d');
+    // createImageData and set() rather than the ImageData constructor: the
+    // constructor is fine everywhere current, and this is the form the rest of
+    // this file's conservatism would have picked anyway.
+    var image = ctx.createImageData(grid.width, grid.height);
+    image.data.set(shaded.data);
+    ctx.putImageData(image, 0, 0);
+
+    surfaceMemo = { key: key, canvas: canvas };
+    return canvas;
+  }
+
+  /**
+   * A whole picture as water: a surface rippling one crest per contour, and the
+   * contours themselves drawn along the tops of those crests.
+   *
+   * Takes the traced contours *and* the grid they came from, which no other
+   * design needs. The two are not independent, which is the point of the whole
+   * design: the surface is a wave in height, so its crests fall on the levels
+   * the tracer used, and the lines are drawn exactly where they were traced
+   * because that is exactly where the shading has raised the water.
+   */
+  function waterGeometry(result, grid, palette, width, height, options) {
+    options = options || {};
+
+    var palettes = Topo.palettes;
+    var scale = width / DESIGN_WIDTH;
+    var total = result.layers.length;
+    var wash = options.wash === undefined ? 0.25 : options.wash;
+
+    // The tracer's own levels, passed on so the crests are put where the lines
+    // are rather than somewhere this file worked out for itself.
+    var shading = {
+      key: options.key,
+      base: result.levels && result.levels.length ? result.levels[0] : grid.min,
+      interval: result.interval,
+      depth: options.depth,
+      sharp: options.sharp,
+      wash: wash,
+      glint: options.glint,
+      reflect: options.reflect,
+      clarity: options.clarity,
+      skyZenith: options.skyZenith,
+      skyHorizon: options.skyHorizon
+    };
+
+    var layers = result.layers
+      .filter(function (layer) { return layer.paths.length > 0; })
+      .map(function (layer) {
+        /*
+         * The colour of the water at this level, then brightened hard.
+         *
+         * A crest line has to be lighter than the crest it sits on, or it reads
+         * as a crack in the water rather than as the light catching the top of
+         * a wave — and taking the tone straight from the same height as the
+         * surface below it would make it exactly as bright as its background
+         * and disappear. The wash factor is the surface's own, so the line
+         * lightens the water it actually crowns and not some other height's.
+         */
+        var u = total > 1 ? layer.index / (total - 1) : 0;
+        var ink = palettes.inkAt(palette, 0.5 + wash * (u - 0.5));
+
+        return {
+          colour: palettes.blend(ink, [255, 255, 255], 0.65),
+          elevation: layer.elevation,
+          index: layer.index,
+          // Undisplaced. The ridge is already here.
+          paths: layer.paths.map(function (path) { return path.points; })
+        };
+      });
+
+    return {
+      kind: 'water',
+      width: width,
+      height: height,
+      background: options.transparent ? null : (palette.background || null),
+      area: frame(width, height, options.margin),
+      surface: surfaceCanvas(grid, palette, shading),
+      lines: options.lines !== false,
+      lineWidth: (options.weight || 1) * scale,
+      lineAlpha: 0.85,
+      layers: layers
+    };
+  }
+
   /**
    * Paint the character grid.
    *
@@ -4266,6 +4971,52 @@ footer a { color: inherit; }
       return canvas;
     }
 
+    /*
+     * Water: the rippling surface first, then the contours along the tops of
+     * the crests it has raised.
+     *
+     * Everything here is in design units, because the one scale() above has
+     * already been applied — which is why the surface needs no transform
+     * bookkeeping of its own. The same drawImage fills the map rectangle
+     * whether this canvas is the preview or the download.
+     */
+    if (spec.kind === 'water') {
+      if (spec.surface) {
+        // The only place in this file that enlarges a raster, and the one place
+        // smoothing is wanted: the surface is at the elevation grid's
+        // resolution, and drawn sharp it would show that grid as a lattice of
+        // squares across the water.
+        ctx.imageSmoothingEnabled = true;
+        if ('imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(spec.surface, spec.area.x, spec.area.y, spec.area.w, spec.area.h);
+      }
+
+      if (spec.lines) {
+        ctx.globalAlpha = spec.lineAlpha;
+        ctx.lineWidth = spec.lineWidth;
+
+        spec.layers.forEach(function (layer) {
+          ctx.strokeStyle = Topo.palettes.css(layer.colour);
+          ctx.beginPath();
+          layer.paths.forEach(function (points) {
+            if (points.length < 4) return;
+            ctx.moveTo(points[0], points[1]);
+            for (var i = 2; i < points.length; i += 2) ctx.lineTo(points[i], points[i + 1]);
+          });
+          ctx.stroke();
+        });
+
+        // Put back, because only the transform is restored below and this
+        // canvas is the same one the next repaint will draw into.
+        ctx.globalAlpha = 1;
+      }
+
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      spec.glyphs = 0;
+      spec.clipped = false;
+      return canvas;
+    }
+
     if (stroke) {
       spec.layers.forEach(function (layer) {
         ctx.strokeStyle = Topo.palettes.css(layer.colour);
@@ -4388,6 +5139,7 @@ footer a { color: inherit; }
     geometry: geometry,
     asciiGeometry: asciiGeometry,
     wordsGeometry: wordsGeometry,
+    waterGeometry: waterGeometry,
     advanceRatio: advanceRatio,
     TONES: TONES,
     isRing: isRing,
@@ -4445,9 +5197,10 @@ footer a { color: inherit; }
   var state = {
     /* Which picture this is. 'contours' draws lines between heights; 'ascii'
      * draws the heights themselves as characters; 'words' fills the frame with
-     * words and lets their colour carry the height. All three share the
-     * elevation grid, the colours, the picture size and the download — only
-     * what is made of the ground differs. */
+     * words and lets their colour carry the height; 'water' reads the ground as
+     * a lit water surface and pushes every contour into a ripple across it. All
+     * four share the elevation grid, the colours, the picture size and the
+     * download — only what is made of the ground differs. */
     design: 'contours',
 
     lat: 46.8523,
@@ -4505,6 +5258,28 @@ footer a { color: inherit; }
     wordSeparator: Topo.ascii.SEPARATOR,
     wordCaps: true,
     wordWeight: 500,
+
+    /* The water design. Note what is *not* a setting here: how many ripples
+     * there are. A ripple is a contour — the surface is a wave in height whose
+     * crests fall on the levels — so the count is the level count, and it lives
+     * in the Terrain panel with every other design's reading of the ground. */
+    waterDepth: 0.55,
+    waterSharp: 0.45,
+    waterWash: 0.25,
+    waterGlint: 0.35,
+    waterLines: true,
+    waterWeight: 0.9,
+
+    /* What makes it a liquid rather than a lit solid: the flanks of the ripples
+     * mirror the sky while the flats between them are seen into, the ground
+     * below slides about as a wave passes over it, and each crest gathers a
+     * band of light beneath itself. The sky has to be given, because a picture
+     * of water from directly above has no horizon in it to take one from. */
+    waterRealistic: true,
+    waterReflect: 0.45,
+    waterClarity: 0.5,
+    waterSkyTop: '#3a6ea5',
+    waterSkyLow: '#dceaf5',
 
     scale: 1,
     filename: ''
@@ -4604,6 +5379,7 @@ footer a { color: inherit; }
   function isContours() { return state.design === 'contours'; }
   function isAscii() { return state.design === 'ascii'; }
   function isWords() { return state.design === 'words'; }
+  function isWater() { return state.design === 'water'; }
 
   /**
    * Is this a grid of characters?
@@ -4613,6 +5389,17 @@ footer a { color: inherit; }
    * trace, need the lettering face, and count what they drew the same way.
    */
   function usesCells() { return isAscii() || isWords(); }
+
+  /**
+   * Does this design need the contours traced?
+   *
+   * Several places below used to ask this by asking isContours(), which was the
+   * same question only while contours were the only design made of lines. The
+   * water design is the second — its ripples are the traced contours, displaced
+   * — so the question gets its own name rather than a longer disjunction
+   * repeated at each site.
+   */
+  function needsTrace() { return isContours() || isWater(); }
 
   /** The ASCII design's settings, for the preview and the download alike. */
   function asciiOptions() {
@@ -4639,6 +5426,32 @@ footer a { color: inherit; }
       weight: state.wordWeight,
       margin: state.margin,
       transparent: state.transparent
+    };
+  }
+
+  /** The water design's settings — one helper, so preview and PNG agree. */
+  function waterOptions() {
+    return {
+      depth: state.waterDepth,
+      sharp: state.waterSharp,
+      wash: state.waterWash,
+      glint: state.waterGlint,
+      lines: state.waterLines,
+      weight: state.waterWeight,
+      /* Zeroed rather than passed with a flag beside them. No mirror and no
+       * clarity is already the plain lit surface, so the renderer keeps one way
+       * of shading a sample and the checkbox is still an honest switch. */
+      reflect: state.waterRealistic ? state.waterReflect : 0,
+      clarity: state.waterRealistic ? state.waterClarity : 0,
+      skyZenith: palettes.parse(state.waterSkyTop),
+      skyHorizon: palettes.parse(state.waterSkyLow),
+      margin: state.margin,
+      transparent: state.transparent,
+      // What the terrain currently is, so the renderer can keep the shaded
+      // surface between repaints. It is passed rather than worked out there
+      // because this file already knows it, and fingerprinting the grid itself
+      // would cost more than the shading the memo is meant to save.
+      key: cache.terrainKey
     };
   }
 
@@ -4739,7 +5552,7 @@ footer a { color: inherit; }
   }
 
   function stats() {
-    if (!cache.grid || (isContours() && !cache.result)) {
+    if (!cache.grid || (needsTrace() && !cache.result)) {
       $('stats').textContent = '';
       return;
     }
@@ -4753,7 +5566,9 @@ footer a { color: inherit; }
       Math.round(cache.grid.min) + '–' + Math.round(cache.grid.max) + ' m',
       usesCells()
         ? (shape && shape.cols ? shape.cols + ' × ' + shape.rows + ' characters' : '')
-        : (result.interval ? Math.round(result.interval) + ' m between lines' : ''),
+        : (result.interval
+          ? Math.round(result.interval) + ' m between ' + (isWater() ? 'ripples' : 'lines')
+          : ''),
       usesCells() ? '' : result.pathCount + ' paths',
       Math.round(plan.metresPerSample) + ' m/sample at zoom ' + plan.zoom
     ].filter(Boolean).join(' · ');
@@ -4801,7 +5616,7 @@ footer a { color: inherit; }
       // The fetch owns the first half of the bar when a trace follows it, and
       // the whole of it when nothing does — otherwise the ASCII design's bar
       // would stop at the middle and vanish.
-      var share = isContours() ? 0.5 : 1;
+      var share = needsTrace() ? 0.5 : 1;
 
       terrain = elevation.fetchGrid(plan, {
         signal: terrainAbort.signal,
@@ -4821,16 +5636,17 @@ footer a { color: inherit; }
         if (!live()) return null;
 
         /*
-         * The ASCII design is finished at this point: it wants the grid and
-         * nothing else, and binning it into characters is a paint-stage job.
-         * The grid is returned because the next step treats a falsy result as
-         * "nothing happened" and would leave the status line mid-sentence.
+         * The grids of characters are finished at this point: they want the
+         * grid and nothing else, and binning it into cells is a paint-stage
+         * job. The grid is returned because the next step treats a falsy result
+         * as "nothing happened" and would leave the status line mid-sentence.
          *
-         * Flat ground stops a contour map — there is nothing to draw a line
-         * between — but it is a perfectly good picture in characters, so that
-         * refusal belongs to the contour branch rather than to both.
+         * Flat ground stops a design made of lines — there is nothing to draw
+         * one between, and no contours means no ripples either — but it is a
+         * perfectly good picture in characters, so that refusal belongs below
+         * this line rather than above it.
          */
-        if (usesCells()) return grid;
+        if (!needsTrace()) return grid;
 
         if (!(grid.max > grid.min)) {
           throw new Error('That area is flat — every sample reads ' +
@@ -4888,7 +5704,8 @@ footer a { color: inherit; }
     var size = exportSize();
     var made = isAscii() ? state.asciiCols + ' characters across'
       : isWords() ? state.wordCols + ' characters across'
-        : state.levels + ' lines';
+        : isWater() ? state.levels + ' ripples'
+          : state.levels + ' lines';
     var line = state.place + ' · ' + fmtDistance(state.widthM) + ' across · ' +
       made + ' · ' + size.width + ' × ' + size.height + ' px';
 
@@ -4920,6 +5737,12 @@ footer a { color: inherit; }
     if (isWords()) {
       return render.wordsGeometry(cache.grid, palette(), width, height, wordOptions());
     }
+    // The only design that wants both: the ripples are made from the trace, and
+    // the water they sit on is made from the elevation directly.
+    if (isWater()) {
+      return render.waterGeometry(traced || cache.result, cache.grid, palette(),
+        width, height, waterOptions());
+    }
     return render.geometry(traced || cache.result, palette(), width, height, {
       weight: state.weight,
       transparent: state.transparent,
@@ -4933,8 +5756,11 @@ footer a { color: inherit; }
    */
   function paint() {
     // The designs need different things to exist: a grid of characters needs
-    // only the ground, lines need the trace made from it.
-    if (isContours() ? !cache.result : !cache.grid) return;
+    // only the ground, lines need the trace made from it, and the water design
+    // is the one that needs both — a shaded surface off the elevation with the
+    // traced contours rippling over it.
+    if (!cache.grid) return;
+    if (needsTrace() && !cache.result) return;
 
     var design = designFrame();
     var spec = specFor(design.width, design.height);
@@ -4961,7 +5787,13 @@ footer a { color: inherit; }
     // of characters needs this as much as the lettering does — more, even,
     // since its column positions come from the face's advance, and a fallback
     // with a different one would misalign every column in the picture.
-    if ((spec.text || spec.kind !== 'contour') && !fontLoaded) ensureFont().then(paint);
+    //
+    // Asked as "which designs set type" rather than as "which design is this
+    // not": the water design draws no letters at all, and the question the
+    // other way round would send it off to wait for a face it never uses and
+    // then repaint the whole picture for nothing.
+    var setsType = !!spec.text || spec.kind === 'ascii' || spec.kind === 'words';
+    if (setsType && !fontLoaded) ensureFont().then(paint);
   }
 
   /* ----------------------------------------------------------------- export */
@@ -4993,7 +5825,8 @@ footer a { color: inherit; }
     $('download').disabled = true;
 
     /*
-     * Contours are traced again at the output size; characters are not.
+     * Designs made of lines are traced again at the output size; characters are
+     * not.
      *
      * The re-trace exists because vertex spacing is in output units, so an
      * enlarged preview would show its facets. A character grid has no such
@@ -5001,8 +5834,11 @@ footer a { color: inherit; }
      * width and the size that fills it both come from the output frame. So a
      * grid of characters downloads as the preview enlarged, exactly, for no
      * CPU at all.
+     *
+     * Asked as needsTrace() rather than as the absence of cells, so that a
+     * fifth design cannot land in the gap between the two questions.
      */
-    var made = usesCells()
+    var made = !needsTrace()
       ? Promise.resolve(null)
       : render.trace(cache.grid, frame, {
         levels: state.levels,
@@ -5296,17 +6132,27 @@ footer a { color: inherit; }
     // Not named `ascii`: that is the module at the top of this file, and
     // shadowing it here would hide it from everything below.
     var lines = isContours();
+    var traced = needsTrace();
 
     $('ascii-section').hidden = !isAscii();
     $('words-section').hidden = !isWords();
-    $('contour-terrain').hidden = !lines;
-    $('contour-tidy').hidden = !lines;
+    $('water-section').hidden = !isWater();
+
+    // How many levels to trace, and whether to drop the specks, are questions
+    // for any design made of lines. Thickness, index contours and the lettering
+    // are contour ideas the water design answers its own way or not at all.
+    $('contour-terrain').hidden = !traced;
+    $('contour-tidy').hidden = !traced;
     $('contour-colour').hidden = !lines;
     $('text-section').hidden = !lines;
 
-    // Why a big download is worth having differs, and the contour answer is not
+    // The slider is the same slider; what it counts is not, and a panel that
+    // said "Contour lines" over a picture of water would be lying about it.
+    $('levels-label').textContent = isWater() ? 'Ripples' : 'Contour lines';
+
+    // Why a big download is worth having differs, and the traced answer is not
     // true of characters — nothing is traced again.
-    $('download-note').textContent = lines
+    $('download-note').textContent = traced
       ? 'The contours are traced again at the full size, so a 4× file is ' +
         'genuinely sharper rather than an enlargement.'
       : 'The same characters, drawn larger — the grid does not change with the ' +
@@ -5493,15 +6339,29 @@ footer a { color: inherit; }
       radio.addEventListener('change', function () {
         if (!radio.checked) return;
         state.design = radio.value;
+
+        /*
+         * Water arrives with its own colours, because on the default cream
+         * paper and black ink it would be a pencil drawing of a sea rather than
+         * a sea. Adopting the preset rather than quietly overriding the palette
+         * is what keeps the panel honest: the swatch that lights up is the one
+         * being drawn, the background picker moves to match, and any other
+         * palette is still one click away afterwards.
+         *
+         * After state.design, which adoptPreset reads on its way through
+         * renderPalettes and indexSettings, and before anything paints.
+         */
+        if (isWater()) adoptPreset('ocean');
+
         syncDesign();
         /*
-         * A repaint, not a rerun. Both designs are made from the same elevation
+         * A repaint, not a rerun. Every design is made from the same elevation
          * grid, and it is already in hand — switching is a frame, not a
-         * download. The one case that needs more is arriving in contour mode
-         * with no trace yet, which paint() declines to draw and run() then
-         * supplies.
+         * download. The one case that needs more is arriving at a design made
+         * of lines with no trace yet, which paint() declines to draw and run()
+         * then supplies.
          */
-        if (isContours() && !cache.result) { schedule(); return; }
+        if (needsTrace() && !cache.result) { schedule(); return; }
         repaint();
       });
     });
@@ -5568,6 +6428,81 @@ footer a { color: inherit; }
     $('word-weight').addEventListener('input', function () {
       state.wordWeight = parseInt($('word-weight').value, 10);
       $('word-weight-val').textContent = state.wordWeight;
+      repaint();
+    });
+
+    /* ---------------------------------------------------------------- water */
+
+    /* The wave controls rebuild every vertex on the map and the surface ones
+     * reshade the whole grid, so they wait for a pause the way the typed boxes
+     * do rather than doing that work for each notch of a dragged slider. */
+    var waterDebounce = null;
+    function waterChanged() {
+      clearTimeout(waterDebounce);
+      waterDebounce = setTimeout(repaint, 120);
+    }
+
+    $('water-depth').addEventListener('input', function () {
+      state.waterDepth = parseFloat($('water-depth').value);
+      $('water-depth-val').textContent = state.waterDepth.toFixed(2);
+      waterChanged();
+    });
+
+    $('water-sharp').addEventListener('input', function () {
+      state.waterSharp = parseFloat($('water-sharp').value);
+      $('water-sharp-val').textContent = state.waterSharp.toFixed(2);
+      waterChanged();
+    });
+
+    $('water-wash').addEventListener('input', function () {
+      state.waterWash = parseFloat($('water-wash').value);
+      $('water-wash-val').textContent = state.waterWash.toFixed(2);
+      waterChanged();
+    });
+
+    $('water-glint').addEventListener('input', function () {
+      state.waterGlint = parseFloat($('water-glint').value);
+      $('water-glint-val').textContent = state.waterGlint.toFixed(2);
+      waterChanged();
+    });
+
+    $('water-realistic').addEventListener('change', function () {
+      state.waterRealistic = $('water-realistic').checked;
+      $('water-real-rows').hidden = !state.waterRealistic;
+      waterChanged();
+    });
+
+    $('water-reflect').addEventListener('input', function () {
+      state.waterReflect = parseFloat($('water-reflect').value);
+      $('water-reflect-val').textContent = state.waterReflect.toFixed(2);
+      waterChanged();
+    });
+
+    $('water-clarity').addEventListener('input', function () {
+      state.waterClarity = parseFloat($('water-clarity').value);
+      $('water-clarity-val').textContent = state.waterClarity.toFixed(2);
+      waterChanged();
+    });
+
+    ['water-sky-top', 'water-sky-low'].forEach(function (id) {
+      $(id).addEventListener('input', function () {
+        if (id === 'water-sky-top') state.waterSkyTop = $(id).value;
+        else state.waterSkyLow = $(id).value;
+        waterChanged();
+      });
+    });
+
+    // The crest lines are drawn over the surface rather than into it, so these
+    // two restroke and leave the shading alone — no reason to make them wait.
+    $('water-lines').addEventListener('change', function () {
+      state.waterLines = $('water-lines').checked;
+      $('water-line-rows').hidden = !state.waterLines;
+      repaint();
+    });
+
+    $('water-weight').addEventListener('input', function () {
+      state.waterWeight = parseFloat($('water-weight').value);
+      $('water-weight-val').textContent = state.waterWeight.toFixed(1) + '×';
       repaint();
     });
 
@@ -5699,6 +6634,28 @@ footer a { color: inherit; }
     $('word-caps').checked = state.wordCaps;
     $('word-weight').value = state.wordWeight;
     $('word-weight-val').textContent = state.wordWeight;
+
+    $('water-depth').value = state.waterDepth;
+    $('water-depth-val').textContent = state.waterDepth.toFixed(2);
+    $('water-sharp').value = state.waterSharp;
+    $('water-sharp-val').textContent = state.waterSharp.toFixed(2);
+    $('water-wash').value = state.waterWash;
+    $('water-wash-val').textContent = state.waterWash.toFixed(2);
+    $('water-glint').value = state.waterGlint;
+    $('water-glint-val').textContent = state.waterGlint.toFixed(2);
+    $('water-realistic').checked = state.waterRealistic;
+    $('water-real-rows').hidden = !state.waterRealistic;
+    $('water-reflect').value = state.waterReflect;
+    $('water-reflect-val').textContent = state.waterReflect.toFixed(2);
+    $('water-clarity').value = state.waterClarity;
+    $('water-clarity-val').textContent = state.waterClarity.toFixed(2);
+    $('water-sky-top').value = state.waterSkyTop;
+    $('water-sky-low').value = state.waterSkyLow;
+    $('water-lines').checked = state.waterLines;
+    $('water-line-rows').hidden = !state.waterLines;
+    $('water-weight').value = state.waterWeight;
+    $('water-weight-val').textContent = state.waterWeight.toFixed(1) + '×';
+
     syncDesign();
 
     $('custom-toggle').setAttribute('aria-pressed', String(state.custom));

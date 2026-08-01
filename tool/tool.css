@@ -296,7 +296,9 @@ input[type=color]:disabled { opacity: .4; cursor: not-allowed; }
 .swatch b:nth-child(2) { width: 78%; }
 .swatch b:nth-child(3) { width: 56%; }
 
-.modes { display: flex; gap: 14px; margin-bottom: 12px; font-size: 13.5px; }
+/* Wrapping, because the design row has outgrown one line of the control
+ * column and a fourth choice would otherwise be pushed off the end of it. */
+.modes { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-bottom: 12px; font-size: 13.5px; }
 .modes label { display: flex; gap: 6px; align-items: center; cursor: pointer; }
 .modes input { accent-color: var(--accent); }
 
