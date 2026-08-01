@@ -61,6 +61,18 @@
       background: [24, 18, 38],
       ramp: [[62, 44, 110], [128, 66, 138], [198, 92, 120], [244, 148, 110]],
       indexEvery: 0
+    },
+    {
+      id: 'ocean',
+      name: 'Ocean',
+      background: [6, 18, 32],
+      /* Deep water up to a lit crest — the water design's own colours, and the
+       * one the design adopts when it is picked. Five stops rather than the
+       * four the other ramps use because the shaded surface spends most of the
+       * picture in the middle of the ramp, and the extra stop is what keeps the
+       * teal from flattening into one band across the whole swell. */
+      ramp: [[8, 26, 52], [16, 62, 96], [26, 116, 138], [104, 186, 190], [214, 240, 236]],
+      indexEvery: 0
     }
   ];
 

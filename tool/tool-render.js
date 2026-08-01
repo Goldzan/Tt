@@ -291,6 +291,149 @@
     };
   }
 
+  /* --------------------------------------------------------------- water */
+
+  /*
+   * The shaded surface, kept between repaints.
+   *
+   * One entry, because only one is ever wanted: the picture on screen. The
+   * shading is a pass over every sample of the elevation grid — three quarters
+   * of a million of them at the High detail setting, twenty or thirty
+   * milliseconds — which is the same order as the character designs already pay
+   * on the repaint path, so it could just be redone each time.
+   *
+   * It is kept anyway, for a reason those designs do not have: the crest lines
+   * are drawn over the surface rather than into it, so switching them off or
+   * changing their thickness leaves the water underneath exactly as it was.
+   * Without this, restroking a hairline would pay thirty milliseconds to redraw
+   * an identical wash.
+   */
+  var surfaceMemo = { key: '', canvas: null };
+
+  /* Enough of a palette to tell one from another. The colours are what the
+   * wash is made of, so a memo that ignored them would leave yesterday's
+   * colour on screen — the exact failure the tool's caches exist to avoid, in
+   * the other direction. */
+  function paletteKey(palette) {
+    return [
+      (palette.ramp || []).join(';'),
+      (palette.ink || []).join(','),
+      (palette.background || []).join(',')
+    ].join('|');
+  }
+
+  /**
+   * The water surface as a canvas at the elevation grid's own resolution.
+   *
+   * At the grid's resolution and at nothing else — this canvas does not know
+   * how big the picture is. That is what makes the preview and the 4000 px
+   * download share one: the same pixels are stretched over the map rectangle at
+   * both sizes, so their agreement is a fact rather than a hope.
+   *
+   * `key` is the caller's own name for the terrain, because tool.js already
+   * keeps one. Fingerprinting the grid here instead would mean hashing three
+   * quarters of a million floats, which costs more than redoing the shading it
+   * was meant to save.
+   */
+  function surfaceCanvas(grid, palette, options) {
+    var key = [options.key, grid.width, grid.height, paletteKey(palette),
+      options.base, options.interval, options.depth, options.sharp,
+      options.wash, options.glint].join('|');
+
+    if (surfaceMemo.key === key && surfaceMemo.canvas) return surfaceMemo.canvas;
+
+    var shaded = Topo.water.surface(grid, {
+      tint: function (t) { return Topo.palettes.inkAt(palette, t); },
+      base: options.base,
+      interval: options.interval,
+      depth: options.depth,
+      sharp: options.sharp,
+      wash: options.wash,
+      glint: options.glint
+    });
+
+    var canvas = offscreen(grid.width, grid.height);
+    var ctx = canvas.getContext('2d');
+    // createImageData and set() rather than the ImageData constructor: the
+    // constructor is fine everywhere current, and this is the form the rest of
+    // this file's conservatism would have picked anyway.
+    var image = ctx.createImageData(grid.width, grid.height);
+    image.data.set(shaded.data);
+    ctx.putImageData(image, 0, 0);
+
+    surfaceMemo = { key: key, canvas: canvas };
+    return canvas;
+  }
+
+  /**
+   * A whole picture as water: a surface rippling one crest per contour, and the
+   * contours themselves drawn along the tops of those crests.
+   *
+   * Takes the traced contours *and* the grid they came from, which no other
+   * design needs. The two are not independent, which is the point of the whole
+   * design: the surface is a wave in height, so its crests fall on the levels
+   * the tracer used, and the lines are drawn exactly where they were traced
+   * because that is exactly where the shading has raised the water.
+   */
+  function waterGeometry(result, grid, palette, width, height, options) {
+    options = options || {};
+
+    var palettes = Topo.palettes;
+    var scale = width / DESIGN_WIDTH;
+    var total = result.layers.length;
+    var wash = options.wash === undefined ? 0.25 : options.wash;
+
+    // The tracer's own levels, passed on so the crests are put where the lines
+    // are rather than somewhere this file worked out for itself.
+    var shading = {
+      key: options.key,
+      base: result.levels && result.levels.length ? result.levels[0] : grid.min,
+      interval: result.interval,
+      depth: options.depth,
+      sharp: options.sharp,
+      wash: wash,
+      glint: options.glint
+    };
+
+    var layers = result.layers
+      .filter(function (layer) { return layer.paths.length > 0; })
+      .map(function (layer) {
+        /*
+         * The colour of the water at this level, then brightened hard.
+         *
+         * A crest line has to be lighter than the crest it sits on, or it reads
+         * as a crack in the water rather than as the light catching the top of
+         * a wave — and taking the tone straight from the same height as the
+         * surface below it would make it exactly as bright as its background
+         * and disappear. The wash factor is the surface's own, so the line
+         * lightens the water it actually crowns and not some other height's.
+         */
+        var u = total > 1 ? layer.index / (total - 1) : 0;
+        var ink = palettes.inkAt(palette, 0.5 + wash * (u - 0.5));
+
+        return {
+          colour: palettes.blend(ink, [255, 255, 255], 0.65),
+          elevation: layer.elevation,
+          index: layer.index,
+          // Undisplaced. The ridge is already here.
+          paths: layer.paths.map(function (path) { return path.points; })
+        };
+      });
+
+    return {
+      kind: 'water',
+      width: width,
+      height: height,
+      background: options.transparent ? null : (palette.background || null),
+      area: frame(width, height, options.margin),
+      surface: surfaceCanvas(grid, palette, shading),
+      lines: options.lines !== false,
+      lineWidth: (options.weight || 1) * scale,
+      lineAlpha: 0.85,
+      layers: layers
+    };
+  }
+
   /**
    * Paint the character grid.
    *
@@ -469,6 +612,52 @@
       return canvas;
     }
 
+    /*
+     * Water: the rippling surface first, then the contours along the tops of
+     * the crests it has raised.
+     *
+     * Everything here is in design units, because the one scale() above has
+     * already been applied — which is why the surface needs no transform
+     * bookkeeping of its own. The same drawImage fills the map rectangle
+     * whether this canvas is the preview or the download.
+     */
+    if (spec.kind === 'water') {
+      if (spec.surface) {
+        // The only place in this file that enlarges a raster, and the one place
+        // smoothing is wanted: the surface is at the elevation grid's
+        // resolution, and drawn sharp it would show that grid as a lattice of
+        // squares across the water.
+        ctx.imageSmoothingEnabled = true;
+        if ('imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(spec.surface, spec.area.x, spec.area.y, spec.area.w, spec.area.h);
+      }
+
+      if (spec.lines) {
+        ctx.globalAlpha = spec.lineAlpha;
+        ctx.lineWidth = spec.lineWidth;
+
+        spec.layers.forEach(function (layer) {
+          ctx.strokeStyle = Topo.palettes.css(layer.colour);
+          ctx.beginPath();
+          layer.paths.forEach(function (points) {
+            if (points.length < 4) return;
+            ctx.moveTo(points[0], points[1]);
+            for (var i = 2; i < points.length; i += 2) ctx.lineTo(points[i], points[i + 1]);
+          });
+          ctx.stroke();
+        });
+
+        // Put back, because only the transform is restored below and this
+        // canvas is the same one the next repaint will draw into.
+        ctx.globalAlpha = 1;
+      }
+
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      spec.glyphs = 0;
+      spec.clipped = false;
+      return canvas;
+    }
+
     if (stroke) {
       spec.layers.forEach(function (layer) {
         ctx.strokeStyle = Topo.palettes.css(layer.colour);
@@ -591,6 +780,7 @@
     geometry: geometry,
     asciiGeometry: asciiGeometry,
     wordsGeometry: wordsGeometry,
+    waterGeometry: waterGeometry,
     advanceRatio: advanceRatio,
     TONES: TONES,
     isRing: isRing,

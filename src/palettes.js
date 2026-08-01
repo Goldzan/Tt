@@ -192,6 +192,10 @@
     isIndex: isIndex,
     inkFor: inkFor,
     inkAt: inkAt,
+    // Exported for the designs that shade one colour towards another — the
+    // water ripples take a crest and a trough either side of their own ink.
+    // It adds no palette, so it adds nothing to what the shop can sell.
+    blend: blend,
     MIN_TONE: MIN_TONE,
     widthFor: widthFor,
     css: css,

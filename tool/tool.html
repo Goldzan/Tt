@@ -39,9 +39,11 @@
         <label><input type="radio" name="design" value="contours" checked> Contour lines</label>
         <label><input type="radio" name="design" value="ascii"> ASCII art</label>
         <label><input type="radio" name="design" value="words"> Word block</label>
+        <label><input type="radio" name="design" value="water"> Water</label>
       </div>
       <p class="hint" id="design-hint">Lines drawn between heights; the heights themselves
-        set as characters; or a block of words whose colour is the height.</p>
+        set as characters; a block of words whose colour is the height; or the ground read
+        as water, with every contour a ripple across it.</p>
     </section>
 
     <section class="panel">
@@ -85,7 +87,8 @@
 
       <div id="contour-terrain">
         <label class="field">
-          <span class="label">Contour lines <span class="value" id="levels-val">20</span></span>
+          <span class="label"><span id="levels-label">Contour lines</span>
+            <span class="value" id="levels-val">20</span></span>
           <input type="range" id="levels" min="5" max="60" step="1" value="20">
         </label>
       </div>
@@ -175,6 +178,59 @@
         <span class="label">Weight <span class="value" id="word-weight-val">500</span></span>
         <input type="range" id="word-weight" min="200" max="900" step="50" value="500">
       </label>
+    </section>
+
+    <section class="panel" id="water-section" hidden>
+      <h2>Water</h2>
+      <p class="hint">A contour line is a level set — every point on it is at the same height —
+        so a wave written in height alone crests exactly along one. Each contour is the top of a
+        ripple, and the water falls away to a trough halfway to the next. Lit from the upper
+        left; a still picture, not an animation.</p>
+      <p class="hint">How many ripples there are is how many contours there are, on the
+        <b>Terrain</b> panel above.</p>
+
+      <label class="field">
+        <span class="label">Ripple depth <span class="value" id="water-depth-val">0.55</span></span>
+        <input type="range" id="water-depth" min="0" max="1.5" step="0.05" value="0.55">
+      </label>
+
+      <label class="field">
+        <span class="label">Crest sharpness <span class="value" id="water-sharp-val">0.45</span></span>
+        <input type="range" id="water-sharp" min="0" max="1" step="0.05" value="0.45">
+      </label>
+      <p class="hint">How raised the waves are, and whether they read as a long clean swell or
+        as a chop with edges on it. Neither moves a crest off its contour.</p>
+
+      <label class="field">
+        <span class="label">Depth tint <span class="value" id="water-wash-val">0.25</span></span>
+        <input type="range" id="water-wash" min="0" max="1" step="0.05" value="0.25">
+      </label>
+      <p class="hint">How much the height still shows in the colour. At zero the water is one
+        colour everywhere and only the light shapes it; turn it up and the valleys go deep and
+        the summits pale, the way the other designs read the ground.</p>
+
+      <label class="field">
+        <span class="label">Sun glint <span class="value" id="water-glint-val">0.35</span></span>
+        <input type="range" id="water-glint" min="0" max="1" step="0.05" value="0.35">
+      </label>
+      <p class="hint">How hard the sun comes off the swell. The surface fills the map area, so a
+        transparent background shows only in the margin.</p>
+
+      <h3>Crest lines</h3>
+
+      <label class="check">
+        <input type="checkbox" id="water-lines" checked>
+        <span><b>Draw the contours along the crests</b>
+          <span class="hint">The traced lines themselves, exactly where the shading has raised
+            the water — the glint on the top of each wave.</span></span>
+      </label>
+
+      <div id="water-line-rows">
+        <label class="field">
+          <span class="label">Crest thickness <span class="value" id="water-weight-val">0.9×</span></span>
+          <input type="range" id="water-weight" min="0.2" max="4" step="0.1" value="0.9">
+        </label>
+      </div>
     </section>
 
     <section class="panel">
@@ -368,6 +424,7 @@
 <script data-inline="src/palettes.js"></script>
 <script data-inline="src/textpath.js"></script>
 <script data-inline="src/ascii.js"></script>
+<script data-inline="src/water.js"></script>
 <script data-inline="src/search.js"></script>
 <script data-inline="src/map.js"></script>
 <script data-inline="tool/tool-palettes.js"></script>
