@@ -40,6 +40,27 @@
 
   var MIN_SIDE = 200;
 
+  /* The printable area on each side of the shirt, as fractions of the photo:
+   * the most a print may cover, and the edges no drag or slider can push it
+   * past. Measured off the photos. The two are the same size; the back's sits
+   * higher because its collar does. */
+  var PRINT_AREA = {
+    front: { left: 0.334, top: 0.2885, right: 0.806, bottom: 0.6325 },
+    back: { left: 0.334, top: 0.2475, right: 0.665, bottom: 0.59 }
+  };
+
+  /* Where the print starts on each side, inside that area. size is how much
+   * of it the print fills (1 is as large as the picture's shape allows there);
+   * across and down are where it sits in the room left over (0 against the
+   * left or top edge, 1 against the right or bottom). Full size, centred, at
+   * the top. */
+  var PLACEMENT_DEFAULTS = {
+    front: { size: 1, across: 0.5, down: 0 },
+    back: { size: 1, across: 0.5, down: 0 }
+  };
+
+  var MIN_PRINT_SIZE = 0.1;
+
   var state = {
     /* Which picture this is. 'contours' draws lines between heights; 'ascii'
      * draws the heights themselves as characters; 'words' fills the frame with
@@ -127,6 +148,14 @@
     waterSkyTop: '#3a6ea5',
     waterSkyLow: '#dceaf5',
 
+    /* The T-shirt preview. 'flat' is the picture as it downloads; 'front' and
+     * 'back' put it on the shirt photos. Each side keeps its own placement, so
+     * a small print on the chest and a big one on the back can both stand. A
+     * placement is relative to that side's print area, so no setting can put
+     * the print outside it, whatever shape the picture is. */
+    view: 'flat',
+    placement: mergePlacement(PLACEMENT_DEFAULTS),
+
     scale: 1,
     filename: ''
   };
@@ -141,11 +170,24 @@
   var runToken = null;
   var debounce = null;
   var searchAbort = null;
+  var mockupBusy = false;
 
   function $(id) { return doc.getElementById(id); }
 
+  // To the metre, which the slider never needs — its widths are whole hundreds
+  // of metres at least — but a typed 12.25 km is not 12.3 km.
   function fmtDistance(m) {
-    return m >= 1000 ? +(m / 1000).toFixed(1) + ' km' : Math.round(m) + ' m';
+    return m >= 1000 ? +(m / 1000).toFixed(3) + ' km' : Math.round(m) + ' m';
+  }
+
+  /*
+   * A readout to `places` decimals — or to as many as three when a typed value
+   * has them, so that 1.25 typed in reads back as 1.25 rather than as a 1.3
+   * that is not what is being drawn.
+   */
+  function fixed(value, places) {
+    var typed = +value.toFixed(3);
+    return typed === +value.toFixed(places) ? value.toFixed(places) : String(typed);
   }
 
   function clamp(value, min, max) {
@@ -246,6 +288,63 @@
    * repeated at each site.
    */
   function needsTrace() { return isContours() || isWater(); }
+
+  /** Is the stage showing the picture on a shirt rather than flat? */
+  function isShirt() { return state.view === 'front' || state.view === 'back'; }
+
+  /**
+   * A placement for both sides, each number taken from `over` where it gives
+   * one and from `base` otherwise.
+   *
+   * Always a fresh copy, so the defaults are never the object being dragged
+   * about, and a script can nudge one number on one side without restating
+   * the rest.
+   */
+  function mergePlacement(base, over) {
+    var out = {};
+    ['front', 'back'].forEach(function (side) {
+      var given = (over && over[side]) || {};
+      out[side] = {};
+      ['size', 'across', 'down'].forEach(function (key) {
+        var value = given[key];
+        out[side][key] = typeof value === 'number' && isFinite(value)
+          ? clamp(value, key === 'size' ? MIN_PRINT_SIZE : 0, 1)
+          : base[side][key];
+      });
+    });
+    return out;
+  }
+
+  /**
+   * Where the print sits on a shirt photo W × H pixels in size, and how much
+   * room it has left to move inside the print area.
+   *
+   * Full size is the largest print of the picture's shape the area holds;
+   * size scales that down, and across and down share out whatever room is
+   * left over. So the print is inside the area by construction, for every
+   * placement and every picture shape, rather than clamped back into it
+   * afterwards. One helper for the preview, the drag and the mockup download,
+   * so the saved file puts the print exactly where it was dragged to.
+   */
+  function printRect(side, width, height) {
+    var area = PRINT_AREA[side];
+    var place = state.placement[side];
+    var aspect = state.imageW / state.imageH;
+    var areaW = (area.right - area.left) * width;
+    var areaH = (area.bottom - area.top) * height;
+    var w = Math.min(areaW, areaH * aspect) * place.size;
+    var h = w / aspect;
+    var roomX = areaW - w;
+    var roomY = areaH - h;
+    return {
+      x: area.left * width + roomX * place.across,
+      y: area.top * height + roomY * place.down,
+      w: w,
+      h: h,
+      roomX: roomX,
+      roomY: roomY
+    };
+  }
 
   /** The ASCII design's settings, for the preview and the download alike. */
   function asciiOptions() {
@@ -640,6 +739,149 @@
     // then repaint the whole picture for nothing.
     var setsType = !!spec.text || spec.kind === 'ascii' || spec.kind === 'words';
     if (setsType && !fontLoaded) ensureFont().then(paint);
+
+    // Every repaint of the picture is a repaint of the shirt it is printed on.
+    paintMockup();
+  }
+
+  /* ----------------------------------------------------------------- mockup */
+
+  var PRINT_FIELDS = { 'print-size': 'size', 'print-across': 'across', 'print-down': 'down' };
+
+  function pct(fraction) {
+    return +(fraction * 100).toFixed(1) + '%';
+  }
+
+  /**
+   * The shirt photo, and the print multiplied into it.
+   *
+   * Multiplied rather than laid over, the way ink takes on cloth: the folds and
+   * shadows of the fabric darken the print, and a white background vanishes
+   * into the white shirt instead of sitting on it like a sticker — which is
+   * also why a transparent one needs nothing special. One function for the
+   * preview and the mockup download, so the two cannot disagree.
+   */
+  function compose(ctx, photo, print, rect, width, height) {
+    ctx.drawImage(photo, 0, 0, width, height);
+    ctx.imageSmoothingEnabled = true;
+    if ('imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.drawImage(print, rect.x, rect.y, rect.w, rect.h);
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  /** The photo for a side, or null while it is still being decoded. */
+  function shirtPhoto(side) {
+    var photo = $('shirt-' + side);
+    return photo && photo.complete && photo.naturalWidth ? photo : null;
+  }
+
+  /**
+   * Put the picture on the shirt, straight from the preview canvas.
+   *
+   * No second render: #view already holds the picture at more pixels than a
+   * print a third of the stage wide can show, so this is one drawImage — cheap
+   * enough to run for every step of a drag.
+   */
+  function paintMockup() {
+    if (!isShirt()) return;
+
+    // The sliders too, because what they can do depends on the picture's
+    // shape, and a new shape arrives here as a repaint.
+    syncPlacement();
+
+    var photo = shirtPhoto(state.view);
+    if (!photo) {
+      // An inlined image still decodes in its own time; draw once it has.
+      $('shirt-' + state.view).addEventListener('load', paintMockup, { once: true });
+      return;
+    }
+
+    var canvas = $('mockup');
+    var dpr = Math.min(2, global.devicePixelRatio || 1);
+    var aspect = photo.naturalWidth / photo.naturalHeight;
+    var cssWidth = canvas.clientWidth || 900;
+    canvas.style.height = Math.round(cssWidth / aspect) + 'px';
+    canvas.width = Math.round(cssWidth * dpr);
+    canvas.height = Math.round(canvas.width / aspect);
+
+    var ctx = canvas.getContext('2d');
+    var rect = printRect(state.view, canvas.width, canvas.height);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    compose(ctx, photo, $('view'), rect, canvas.width, canvas.height);
+
+    // Where the print ends, which the multiply has just hidden wherever the
+    // picture is white. The preview's alone: the download is the shirt as it
+    // would be printed, with no guides on it.
+    ctx.save();
+    ctx.setLineDash([5 * dpr, 4 * dpr]);
+    ctx.lineWidth = dpr;
+    ctx.strokeStyle = 'rgba(178, 76, 51, 0.6)';
+    ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+
+    // While the print is being dragged, the area it is held inside, so the
+    // place where it stops moving is not a mystery.
+    if (canvas.classList.contains('dragging')) {
+      var area = PRINT_AREA[state.view];
+      ctx.strokeStyle = 'rgba(23, 23, 26, 0.35)';
+      ctx.strokeRect(area.left * canvas.width, area.top * canvas.height,
+        (area.right - area.left) * canvas.width, (area.bottom - area.top) * canvas.height);
+    }
+    ctx.restore();
+  }
+
+  /**
+   * Show the stage and the panel for whichever view is on.
+   *
+   * The visibility is settled here, before anything paints, because paint()
+   * measures #view to size it — and a canvas measured while hidden is sized
+   * by a guess.
+   */
+  function syncMockup() {
+    var shirt = isShirt();
+
+    Array.prototype.forEach.call(doc.getElementsByName('view'), function (radio) {
+      radio.checked = radio.value === state.view;
+    });
+
+    $('view').hidden = shirt;
+    $('mockup').hidden = !shirt;
+    $('shirt-hint').hidden = shirt;
+    $('shirt-rows').hidden = !shirt;
+    $('shirt-side').textContent = shirt ? '— ' + state.view : '';
+
+    $('download-mockup').textContent = shirt
+      ? 'Download ' + state.view + ' mockup'
+      : 'Download mockup';
+    $('download-mockup').disabled = !shirt || mockupBusy;
+
+    syncPlacement();
+  }
+
+  /** The placement sliders, for the side on the stage. */
+  function syncPlacement() {
+    if (!isShirt()) return;
+    var place = state.placement[state.view];
+    Object.keys(PRINT_FIELDS).forEach(function (id) {
+      var value = place[PRINT_FIELDS[id]];
+      $(id).value = value * 100;
+      $(id + '-val').textContent = pct(value);
+    });
+
+    // A print that already spans the area one way has no room to move that
+    // way, and a slider that did nothing would only look broken.
+    var photo = shirtPhoto(state.view);
+    var rect = printRect(state.view, photo ? photo.naturalWidth : 1000,
+      photo ? photo.naturalHeight : 1000);
+    $('print-across').disabled = rect.roomX < 0.5;
+    $('print-down').disabled = rect.roomY < 0.5;
+    // Nor should the number beside it offer to be typed into.
+    ['print-across', 'print-down'].forEach(function (id) {
+      $(id + '-val').setAttribute('aria-disabled', String($(id).disabled));
+    });
+
+    $('print-reset').textContent = 'Reset the ' + state.view;
   }
 
   /* ----------------------------------------------------------------- export */
@@ -665,43 +907,14 @@
       return Promise.resolve(null);
     }
 
-    var frame = render.frame(size.width, size.height, state.margin);
     status('Rendering ' + size.width + ' × ' + size.height + '…', true);
     progress(0);
     $('download').disabled = true;
 
-    /*
-     * Designs made of lines are traced again at the output size; characters are
-     * not.
-     *
-     * The re-trace exists because vertex spacing is in output units, so an
-     * enlarged preview would show its facets. A character grid has no such
-     * problem: the columns are the same columns, only bigger, because the cell
-     * width and the size that fills it both come from the output frame. So a
-     * grid of characters downloads as the preview enlarged, exactly, for no
-     * CPU at all.
-     *
-     * Asked as needsTrace() rather than as the absence of cells, so that a
-     * fifth design cannot land in the gap between the two questions.
-     */
-    var made = !needsTrace()
-      ? Promise.resolve(null)
-      : render.trace(cache.grid, frame, {
-        levels: state.levels,
-        spacing: render.EXPORT_SPACING,
-        tidy: state.tidy,
-        onProgress: function (done, total) { progress(total ? done / total : 0); }
-      });
-
-    return made
-      .then(function (result) {
-        // The face has to be in hand before the offscreen canvas letters with
-        // it; nothing on the page has necessarily rendered it yet.
-        return ensureFont().then(function () { return result; });
-      })
-      .then(function (result) {
-        var canvas = render.offscreen(size.width, size.height);
-        render.draw(canvas, specFor(size.width, size.height, result));
+    return renderPicture(size.width, size.height, function (done, total) {
+      progress(total ? done / total : 0);
+    })
+      .then(function (canvas) {
         var name = $('filename').value.trim() || defaultFilename();
         if (!/\.png$/i.test(name)) name += '.png';
         return render.toPng(canvas, name);
@@ -717,6 +930,116 @@
         status(err.message, false);
         progress(null);
         $('download').disabled = false;
+        throw err;
+      });
+  }
+
+  /**
+   * The picture drawn at an exact pixel size, on a canvas of its own.
+   *
+   * Both downloads come through here: the PNG at the size asked for, and the
+   * print at the size it covers on the shirt.
+   *
+   * Designs made of lines are traced again at the output size; characters are
+   * not.
+   *
+   * The re-trace exists because vertex spacing is in output units, so an
+   * enlarged preview would show its facets. A character grid has no such
+   * problem: the columns are the same columns, only bigger, because the cell
+   * width and the size that fills it both come from the output frame. So a
+   * grid of characters downloads as the preview enlarged, exactly, for no
+   * CPU at all.
+   *
+   * Asked as needsTrace() rather than as the absence of cells, so that a
+   * fifth design cannot land in the gap between the two questions.
+   */
+  function renderPicture(width, height, onProgress) {
+    var made = !needsTrace()
+      ? Promise.resolve(null)
+      : render.trace(cache.grid, render.frame(width, height, state.margin), {
+        levels: state.levels,
+        spacing: render.EXPORT_SPACING,
+        tidy: state.tidy,
+        onProgress: onProgress
+      });
+
+    return made
+      .then(function (result) {
+        // The face has to be in hand before the offscreen canvas letters with
+        // it; nothing on the page has necessarily rendered it yet.
+        return ensureFont().then(function () { return result; });
+      })
+      .then(function (result) {
+        var canvas = render.offscreen(width, height);
+        render.draw(canvas, specFor(width, height, result));
+        return canvas;
+      });
+  }
+
+  function mockupFilename(side) {
+    var typed = $('filename').value.trim().replace(/\.png$/i, '');
+    return (typed || slug(state.place)) + '-' + side + '-mockup.png';
+  }
+
+  /**
+   * Save the shirt on the stage with the print on it.
+   *
+   * At the photo's own size, since that is all the detail the shirt has. The
+   * print is rendered afresh at the size it covers there rather than taken
+   * from the preview, so its lines are as clean as the plain download's — and
+   * weighted as the preview showed them, because line weights follow the
+   * picture's width.
+   */
+  function downloadMockup() {
+    if (!isShirt()) {
+      status('Choose T-shirt front or back above the picture first.', false);
+      return Promise.resolve(null);
+    }
+    if (!cache.grid) {
+      status('Nothing to put on the shirt yet — pick a place first.', false);
+      return Promise.resolve(null);
+    }
+
+    var side = state.view;
+    var photo = shirtPhoto(side);
+    if (!photo) {
+      status('The shirt photo is still loading — try again in a moment.', false);
+      return Promise.resolve(null);
+    }
+
+    var width = photo.naturalWidth;
+    var height = photo.naturalHeight;
+    // Taken now, so dragging the print while this renders cannot tear the
+    // saved file between two placements.
+    var rect = printRect(side, width, height);
+
+    status('Rendering the ' + side + ' mockup…', true);
+    progress(0);
+    mockupBusy = true;
+    syncMockup();
+
+    function done() {
+      progress(null);
+      mockupBusy = false;
+      syncMockup();
+    }
+
+    return renderPicture(Math.max(1, Math.round(rect.w)), Math.max(1, Math.round(rect.h)),
+      function (step, total) { progress(total ? step / total : 0); })
+      .then(function (print) {
+        var canvas = render.offscreen(width, height);
+        compose(canvas.getContext('2d'), photo, print, rect, width, height);
+        return render.toPng(canvas, mockupFilename(side));
+      })
+      .then(function (blob) {
+        status('Saved the ' + side + ' mockup, ' + width + ' × ' + height + ' PNG (' +
+          (blob.size / 1048576).toFixed(1) + ' MB).', false);
+        done();
+        return blob;
+      })
+      .catch(function (err) {
+        status(err.message, false);
+        done();
         throw err;
       });
   }
@@ -793,9 +1116,7 @@
 
   function choose(result) {
     state.place = result.name;
-    state.widthM = search.widthForResult(result);
-    $('width').value = widthToSlider(state.widthM);
-    $('width-val').textContent = fmtDistance(state.widthM);
+    setWidth(search.widthForResult(result));
     $('filename').placeholder = defaultFilename();
     $('results').hidden = true;
     $('q').value = result.name;
@@ -816,6 +1137,20 @@
     var ratio = elevation.MAX_WIDTH_M / elevation.MIN_WIDTH_M;
     var clamped = clamp(metres, elevation.MIN_WIDTH_M, elevation.MAX_WIDTH_M);
     return Math.round((SLIDER_MAX * Math.log(clamped / elevation.MIN_WIDTH_M)) / Math.log(ratio));
+  }
+
+  /**
+   * Cover this much ground, from a search result or a typed distance.
+   *
+   * Not from the slider, which sets the width off its own position: putting
+   * the thumb back where the rounded width says would nudge it under the
+   * pointer mid-drag. Everything else that sets a width moves the thumb to
+   * match, and goes no nearer the slider's notches than the metre.
+   */
+  function setWidth(metres) {
+    state.widthM = clamp(Math.round(metres), elevation.MIN_WIDTH_M, elevation.MAX_WIDTH_M);
+    $('width').value = widthToSlider(state.widthM);
+    $('width-val').textContent = fmtDistance(state.widthM);
   }
 
   /* --------------------------------------------------------------- controls */
@@ -1152,7 +1487,7 @@
 
     $('weight').addEventListener('input', function () {
       state.weight = parseFloat($('weight').value);
-      $('weight-val').textContent = state.weight.toFixed(1) + '×';
+      $('weight-val').textContent = fixed(state.weight, 1) + '×';
       repaint();
     });
 
@@ -1164,7 +1499,7 @@
 
     $('index-width').addEventListener('input', function () {
       state.indexWidth = parseFloat($('index-width').value);
-      $('index-width-val').textContent = state.indexWidth.toFixed(1) + '×';
+      $('index-width-val').textContent = fixed(state.indexWidth, 1) + '×';
       repaint();
     });
 
@@ -1290,25 +1625,25 @@
 
     $('water-depth').addEventListener('input', function () {
       state.waterDepth = parseFloat($('water-depth').value);
-      $('water-depth-val').textContent = state.waterDepth.toFixed(2);
+      $('water-depth-val').textContent = fixed(state.waterDepth, 2);
       waterChanged();
     });
 
     $('water-sharp').addEventListener('input', function () {
       state.waterSharp = parseFloat($('water-sharp').value);
-      $('water-sharp-val').textContent = state.waterSharp.toFixed(2);
+      $('water-sharp-val').textContent = fixed(state.waterSharp, 2);
       waterChanged();
     });
 
     $('water-wash').addEventListener('input', function () {
       state.waterWash = parseFloat($('water-wash').value);
-      $('water-wash-val').textContent = state.waterWash.toFixed(2);
+      $('water-wash-val').textContent = fixed(state.waterWash, 2);
       waterChanged();
     });
 
     $('water-glint').addEventListener('input', function () {
       state.waterGlint = parseFloat($('water-glint').value);
-      $('water-glint-val').textContent = state.waterGlint.toFixed(2);
+      $('water-glint-val').textContent = fixed(state.waterGlint, 2);
       waterChanged();
     });
 
@@ -1320,13 +1655,13 @@
 
     $('water-reflect').addEventListener('input', function () {
       state.waterReflect = parseFloat($('water-reflect').value);
-      $('water-reflect-val').textContent = state.waterReflect.toFixed(2);
+      $('water-reflect-val').textContent = fixed(state.waterReflect, 2);
       waterChanged();
     });
 
     $('water-clarity').addEventListener('input', function () {
       state.waterClarity = parseFloat($('water-clarity').value);
-      $('water-clarity-val').textContent = state.waterClarity.toFixed(2);
+      $('water-clarity-val').textContent = fixed(state.waterClarity, 2);
       waterChanged();
     });
 
@@ -1348,7 +1683,7 @@
 
     $('water-weight').addEventListener('input', function () {
       state.waterWeight = parseFloat($('water-weight').value);
-      $('water-weight-val').textContent = state.waterWeight.toFixed(1) + '×';
+      $('water-weight-val').textContent = fixed(state.waterWeight, 1) + '×';
       repaint();
     });
 
@@ -1378,7 +1713,7 @@
 
     $('text-size').addEventListener('input', function () {
       state.textSize = parseFloat($('text-size').value);
-      $('text-size-val').textContent = state.textSize.toFixed(1);
+      $('text-size-val').textContent = fixed(state.textSize, 1);
       repaint();
     });
 
@@ -1390,19 +1725,57 @@
 
     $('text-tracking').addEventListener('input', function () {
       state.textTracking = parseFloat($('text-tracking').value);
-      $('text-tracking-val').textContent = state.textTracking.toFixed(2) + ' em';
+      $('text-tracking-val').textContent = fixed(state.textTracking, 2) + ' em';
       repaint();
     });
 
     $('text-gap').addEventListener('input', function () {
       state.textGap = parseFloat($('text-gap').value);
-      $('text-gap-val').textContent = state.textGap.toFixed(1) + ' em';
+      $('text-gap-val').textContent = fixed(state.textGap, 1) + ' em';
       repaint();
     });
 
     $('text-keep-lines').addEventListener('change', function () {
       state.textKeepLines = $('text-keep-lines').checked;
       repaint();
+    });
+
+    /* --------------------------------------------------------------- mockup */
+
+    Array.prototype.forEach.call(doc.getElementsByName('view'), function (radio) {
+      radio.addEventListener('change', function () {
+        if (!radio.checked) return;
+        state.view = radio.value;
+        syncMockup();
+        // Onto a shirt needs only the shirt drawn: the picture is in hand. Back
+        // to flat is a repaint, because #view was last sized while hidden, by
+        // a guess at its width rather than a measurement.
+        if (isShirt()) paintMockup();
+        else paint();
+      });
+    });
+
+    Object.keys(PRINT_FIELDS).forEach(function (id) {
+      $(id).addEventListener('input', function () {
+        if (!isShirt()) return;
+        state.placement[state.view][PRINT_FIELDS[id]] = parseFloat($(id).value) / 100;
+        paintMockup();
+      });
+    });
+
+    $('print-reset').addEventListener('click', function () {
+      if (!isShirt()) return;
+      var reset = {};
+      reset[state.view] = PLACEMENT_DEFAULTS[state.view];
+      state.placement = mergePlacement(state.placement, reset);
+      paintMockup();
+    });
+
+    wireDrag();
+    wireTyping();
+
+    $('download-mockup').addEventListener('click', function () {
+      downloadMockup().catch(function () { /* already reported in the status line */ });
     });
 
     $('scale').addEventListener('change', function () {
@@ -1420,6 +1793,201 @@
     });
   }
 
+  /**
+   * Drag the print about on the shirt.
+   *
+   * From wherever the drag starts, not only from on the print: a small print
+   * is a small target, and a white one is barely visible. The move is by the
+   * pointer's travel, so the print never jumps to meet it, and it stops at the
+   * edge of the print area. Redrawn once a frame, however many moves the
+   * pointer reports in between.
+   */
+  function wireDrag() {
+    var canvas = $('mockup');
+    var drag = null;
+    var pending = 0;
+
+    canvas.addEventListener('pointerdown', function (ev) {
+      if (!isShirt() || ev.button !== 0) return;
+      var place = state.placement[state.view];
+      // The room is measured in the canvas's CSS pixels, the units the pointer
+      // moves in, so the print keeps pace with it until it meets an edge.
+      var rect = printRect(state.view, canvas.clientWidth || 1, canvas.clientHeight || 1);
+      drag = {
+        id: ev.pointerId,
+        x: ev.clientX,
+        y: ev.clientY,
+        across: place.across,
+        down: place.down,
+        roomX: rect.roomX,
+        roomY: rect.roomY
+      };
+      canvas.setPointerCapture(ev.pointerId);
+      canvas.classList.add('dragging');
+      paintMockup();
+      ev.preventDefault();
+    });
+
+    canvas.addEventListener('pointermove', function (ev) {
+      if (!drag || ev.pointerId !== drag.id || !isShirt()) return;
+      var place = state.placement[state.view];
+      if (drag.roomX > 0) place.across = clamp(drag.across + (ev.clientX - drag.x) / drag.roomX, 0, 1);
+      if (drag.roomY > 0) place.down = clamp(drag.down + (ev.clientY - drag.y) / drag.roomY, 0, 1);
+      if (pending) return;
+      pending = global.requestAnimationFrame(function () {
+        pending = 0;
+        paintMockup();
+      });
+    });
+
+    function end(ev) {
+      if (!drag || ev.pointerId !== drag.id) return;
+      drag = null;
+      canvas.classList.remove('dragging');
+      paintMockup();
+    }
+    canvas.addEventListener('pointerup', end);
+    canvas.addEventListener('pointercancel', end);
+  }
+
+  /* ---------------------------------------------------------- typed numbers */
+
+  var NUMBER = /-?(?:\d+\.?\d*|\.\d+)/;
+
+  /**
+   * Let the number beside every slider be typed into.
+   *
+   * A slider is quick but coarse — 0.05 a notch, or one of a thousand places
+   * along a logarithmic scale — and some numbers are wanted exactly. So a click
+   * on the readout (or Enter on it) swaps it for a box holding its number, and
+   * Enter or clicking away sends what was typed through the slider's own input
+   * handler: one path for both, so a typed value has every effect a dragged one
+   * does. Escape leaves things as they were.
+   *
+   * Every slider is found by the one convention the page already keeps — its
+   * readout's id is its own plus -val — so a slider added later is typeable
+   * without being listed here.
+   */
+  function wireTyping() {
+    Array.prototype.forEach.call(doc.querySelectorAll('input[type=range]'), function (slider) {
+      var readout = $(slider.id + '-val');
+      if (!readout) return;
+
+      // Focusable and announced as a button: a span, not a <button>, because a
+      // button inside the <label> would become what the label names in the
+      // slider's place.
+      readout.classList.add('typeable');
+      readout.tabIndex = 0;
+      readout.setAttribute('role', 'button');
+      readout.title = 'Click to type a value';
+
+      readout.addEventListener('click', function (ev) {
+        // Inside a <label>, the click would otherwise go on to the slider.
+        ev.preventDefault();
+        openTyping(slider, readout);
+      });
+      readout.addEventListener('keydown', function (ev) {
+        if (ev.key !== 'Enter' && ev.key !== ' ') return;
+        ev.preventDefault();
+        openTyping(slider, readout);
+      });
+    });
+  }
+
+  /**
+   * Swap a readout for a box to type its number into.
+   *
+   * The box goes in beside the readout, which is hidden rather than emptied:
+   * the handlers write readouts as they please — the shirt's are rewritten on
+   * every repaint — and would otherwise overwrite the box mid-word. Whatever
+   * surrounds the number ("every", "km", "×") stays either side of it, so what
+   * the number means is still on screen while it is being replaced.
+   */
+  function openTyping(slider, readout) {
+    if (slider.disabled || readout.hidden) return;
+
+    var shown = readout.textContent;
+    var match = shown.match(NUMBER);
+    // "off" has no number in it; the slider's own value is what it stands for.
+    var start = match ? match[0] : slider.value;
+    var name = readout.parentNode.textContent.replace(shown, '').replace(/\s+/g, ' ').trim();
+
+    var box = doc.createElement('span');
+    box.className = 'value-edit';
+    var input = doc.createElement('input');
+    input.type = 'text';
+    input.inputMode = 'decimal';
+    input.autocomplete = 'off';
+    input.spellcheck = false;
+    input.value = start;
+    input.setAttribute('aria-label', name);
+    box.appendChild(doc.createTextNode(match ? shown.slice(0, match.index).trim() : ''));
+    box.appendChild(input);
+    box.appendChild(doc.createTextNode(match ? shown.slice(match.index + start.length).trim() : ''));
+
+    readout.hidden = true;
+    readout.parentNode.insertBefore(box, readout.nextSibling);
+    input.focus();
+    input.select();
+
+    var closed = false;
+    function close(keep, refocus) {
+      // Removing the box can blur it, and that must not close it twice.
+      if (closed) return;
+      closed = true;
+      box.parentNode.removeChild(box);
+      readout.hidden = false;
+      // Only an edit is applied. Opening a readout and leaving must change
+      // nothing — and re-reading one that shows a rounded figure would.
+      if (keep && input.value.trim() !== start) applyTyped(slider, input.value, shown);
+      if (refocus) readout.focus();
+    }
+
+    input.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter') { ev.preventDefault(); close(true, true); }
+      if (ev.key === 'Escape') { ev.preventDefault(); close(false, true); }
+    });
+    input.addEventListener('blur', function () { close(true, false); });
+  }
+
+  /**
+   * Put a typed number into a slider, as if it had been dragged there.
+   *
+   * Held to the slider's range, since that is what the design is built to
+   * draw, but not to its notches: 0.57 stays 0.57, where dragging could only
+   * reach 0.55 or 0.6. A slider that steps in whole numbers rounds, because
+   * what it counts — lines, columns, a font weight — has no halves. Text that
+   * holds no number is ignored, and the readout keeps what it had.
+   */
+  function applyTyped(slider, typed, shown) {
+    var match = typed.replace(/,/g, '.').match(NUMBER);
+    if (!match) return;
+    var number = parseFloat(match[0]);
+
+    // The one readout not in its slider's units: the slider is a place along a
+    // log scale and the readout is a distance, in km or m. A unit typed wins;
+    // otherwise the number is in whichever one the readout was showing.
+    if (slider.id === 'width') {
+      var unit = /km/i.test(typed) ? 1000 : /m/i.test(typed) ? 1 : /km/i.test(shown) ? 1000 : 1;
+      setWidth(number * unit);
+      syncMap(false);
+      schedule();
+      return;
+    }
+
+    if (parseFloat(slider.step) % 1 === 0) number = Math.round(number);
+    number = clamp(number, parseFloat(slider.min), parseFloat(slider.max));
+
+    // Unstepped for as long as the handler takes to read it, so the value
+    // arrives as typed and not snapped to the nearest notch. What the thumb
+    // does once the step is back is only where it is drawn.
+    var step = slider.getAttribute('step');
+    slider.step = 'any';
+    slider.value = String(number);
+    slider.dispatchEvent(new global.Event('input', { bubbles: true }));
+    slider.setAttribute('step', step);
+  }
+
   /* ------------------------------------------------------------------- boot */
 
   /** Push the whole of state into the controls, so the panel never lies. */
@@ -1432,7 +2000,7 @@
     $('levels').value = state.levels;
     $('levels-val').textContent = state.levels;
     $('weight').value = state.weight;
-    $('weight-val').textContent = state.weight.toFixed(1) + '×';
+    $('weight-val').textContent = fixed(state.weight, 1) + '×';
     $('img-w').value = state.imageW;
     $('img-h').value = state.imageH;
     $('margin').value = Math.round(state.margin * 100);
@@ -1442,7 +2010,7 @@
     $('index-every').value = state.indexEvery;
     $('index-every-val').textContent = state.indexEvery ? 'every ' + state.indexEvery : 'off';
     $('index-width').value = state.indexWidth;
-    $('index-width-val').textContent = state.indexWidth.toFixed(1) + '×';
+    $('index-width-val').textContent = fixed(state.indexWidth, 1) + '×';
     $('index-ink').value = state.indexInk;
     $('index-ink').disabled = !state.indexTint;
     $('tidy').checked = state.tidy;
@@ -1456,13 +2024,13 @@
     $('text-words').value = state.textWords;
     $('text-caps').checked = state.textCaps;
     $('text-size').value = state.textSize;
-    $('text-size-val').textContent = state.textSize.toFixed(1);
+    $('text-size-val').textContent = fixed(state.textSize, 1);
     $('text-weight').value = state.textWeight;
     $('text-weight-val').textContent = state.textWeight;
     $('text-tracking').value = state.textTracking;
-    $('text-tracking-val').textContent = state.textTracking.toFixed(2) + ' em';
+    $('text-tracking-val').textContent = fixed(state.textTracking, 2) + ' em';
     $('text-gap').value = state.textGap;
-    $('text-gap-val').textContent = state.textGap.toFixed(1) + ' em';
+    $('text-gap-val').textContent = fixed(state.textGap, 1) + ' em';
     $('text-keep-lines').checked = state.textKeepLines;
     syncWordCount();
 
@@ -1482,27 +2050,28 @@
     $('word-weight-val').textContent = state.wordWeight;
 
     $('water-depth').value = state.waterDepth;
-    $('water-depth-val').textContent = state.waterDepth.toFixed(2);
+    $('water-depth-val').textContent = fixed(state.waterDepth, 2);
     $('water-sharp').value = state.waterSharp;
-    $('water-sharp-val').textContent = state.waterSharp.toFixed(2);
+    $('water-sharp-val').textContent = fixed(state.waterSharp, 2);
     $('water-wash').value = state.waterWash;
-    $('water-wash-val').textContent = state.waterWash.toFixed(2);
+    $('water-wash-val').textContent = fixed(state.waterWash, 2);
     $('water-glint').value = state.waterGlint;
-    $('water-glint-val').textContent = state.waterGlint.toFixed(2);
+    $('water-glint-val').textContent = fixed(state.waterGlint, 2);
     $('water-realistic').checked = state.waterRealistic;
     $('water-real-rows').hidden = !state.waterRealistic;
     $('water-reflect').value = state.waterReflect;
-    $('water-reflect-val').textContent = state.waterReflect.toFixed(2);
+    $('water-reflect-val').textContent = fixed(state.waterReflect, 2);
     $('water-clarity').value = state.waterClarity;
-    $('water-clarity-val').textContent = state.waterClarity.toFixed(2);
+    $('water-clarity-val').textContent = fixed(state.waterClarity, 2);
     $('water-sky-top').value = state.waterSkyTop;
     $('water-sky-low').value = state.waterSkyLow;
     $('water-lines').checked = state.waterLines;
     $('water-line-rows').hidden = !state.waterLines;
     $('water-weight').value = state.waterWeight;
-    $('water-weight-val').textContent = state.waterWeight.toFixed(1) + '×';
+    $('water-weight-val').textContent = fixed(state.waterWeight, 1) + '×';
 
     syncDesign();
+    syncMockup();
 
     $('custom-toggle').setAttribute('aria-pressed', String(state.custom));
     $('custom-panel').hidden = !state.custom;
@@ -1559,7 +2128,10 @@
     },
     setDesign: function (changes) {
       if (changes.preset !== undefined) adoptPreset(changes.preset);
+      var placement = state.placement;
       Object.keys(changes).forEach(function (key) { state[key] = changes[key]; });
+      // Merged rather than replaced, so one side can be moved on its own.
+      if (changes.placement) state.placement = mergePlacement(placement, changes.placement);
       if (changes.imageW !== undefined || changes.imageH !== undefined) {
         setImageSize(state.imageW, state.imageH);
       }
@@ -1568,6 +2140,7 @@
     },
     render: rerun,
     download: download,
+    mockup: downloadMockup,
     geometry: function () { return cache.geometry; },
     // The elevation the picture was made from, for a script that wants to
     // check the picture against the ground rather than take it on trust.

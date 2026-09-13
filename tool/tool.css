@@ -84,6 +84,29 @@ main {
 
 .stage.busy { opacity: .72; }
 
+/* The preview switch: the picture flat, or on either side of a shirt. Radios
+   under the chips, so arrow keys and screen readers still get a real group. */
+.views { display: flex; flex-wrap: wrap; margin-bottom: 12px; }
+.views label { position: relative; cursor: pointer; }
+.views input { position: absolute; opacity: 0; pointer-events: none; }
+.views span {
+  display: block;
+  margin-right: calc(-1 * var(--edge));
+  padding: 6px 11px;
+  background: var(--card);
+  border: var(--edge) solid var(--ink);
+  font: 600 11.5px var(--mono);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+.views input:checked + span { background: var(--ink); color: var(--paper); }
+.views input:focus-visible + span {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 #view {
   display: block;
   width: 100%;
@@ -100,6 +123,24 @@ main {
   background-size: 18px 18px;
   background-position: 0 0, 9px 9px;
 }
+
+/* The shirt is square, so it is held to the window's height as well as the
+   stage's width — otherwise the sticky stage would run off the bottom. */
+#mockup {
+  display: block;
+  width: 100%;
+  max-width: max(320px, calc(100vh - 150px));
+  margin: 0 auto;
+  background: #fff;
+  cursor: grab;
+  touch-action: none;
+}
+#mockup.dragging { cursor: grabbing; }
+
+/* The ids above set display, which would beat the hidden attribute. */
+#view[hidden], #mockup[hidden] { display: none; }
+
+#download-mockup { margin: 18px 0 0; }
 
 .readout {
   display: flex;
@@ -162,6 +203,38 @@ main {
 }
 .value { font-family: var(--mono); font-weight: 400; color: var(--muted); }
 
+/* A slider's readout, which can be clicked and typed into. The dotted rule is
+ * the hint that it is more than a caption; it firms up under the pointer. */
+.value.typeable {
+  border-bottom: 1px dotted var(--muted);
+  cursor: text;
+}
+.value.typeable:hover { color: var(--ink); border-bottom-style: solid; }
+.value.typeable:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.value.typeable[aria-disabled=true] {
+  border-bottom-color: transparent;
+  cursor: default;
+  pointer-events: none;
+}
+
+/* The box that stands in for a readout while it is being typed into. Pulled in
+ * top and bottom so opening it does not shove the slider below it down. */
+.value-edit {
+  display: inline-flex;
+  align-items: baseline;
+  gap: .3em;
+  font-family: var(--mono);
+  font-weight: 400;
+  color: var(--muted);
+}
+.value-edit input[type=text] {
+  width: 8ch;
+  margin: -3px 0;
+  padding: 1px 5px;
+  color: var(--ink);
+  text-align: right;
+}
+
 input[type=text], input[type=search], input[type=number], select, textarea {
   width: 100%;
   padding: 9px 10px;
@@ -200,6 +273,7 @@ input.lettered {
 }
 
 input[type=range] { width: 100%; accent-color: var(--accent); }
+input[type=range]:disabled { opacity: .4; cursor: not-allowed; }
 
 input[type=color] {
   width: 52px;

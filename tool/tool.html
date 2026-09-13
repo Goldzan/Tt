@@ -23,7 +23,17 @@
 <main>
 
   <div class="stage" id="stage">
+    <div class="views" role="radiogroup" aria-label="Preview">
+      <label><input type="radio" name="view" value="flat" checked><span>Flat</span></label>
+      <label><input type="radio" name="view" value="front"><span>T-shirt front</span></label>
+      <label><input type="radio" name="view" value="back"><span>T-shirt back</span></label>
+    </div>
     <canvas id="view" width="1600" height="1200"></canvas>
+    <canvas id="mockup" width="900" height="900" hidden
+            aria-label="The map printed on a T-shirt. Drag to move the print."></canvas>
+    <!-- The shirt photos, inlined by the build. Drawn into the mockup, never shown. -->
+    <img id="shirt-front" data-inline="assets/Front.png" alt="" hidden>
+    <img id="shirt-back" data-inline="assets/Back.png" alt="" hidden>
     <div class="readout">
       <span id="status">Loading…</span>
       <span id="stats"></span>
@@ -298,6 +308,38 @@
       </label>
     </section>
 
+    <section class="panel" id="shirt-section">
+      <h2>T-shirt <span id="shirt-side"></span></h2>
+      <p class="hint" id="shirt-hint">Choose <b>T-shirt front</b> or <b>T-shirt back</b> above
+        the picture to see the map printed on a shirt.</p>
+
+      <div id="shirt-rows" hidden>
+        <p class="hint">Drag on the shirt to move the print. It stays inside the shirt's print
+          area, which is outlined while you drag. The front and the back each keep their own
+          place and size.</p>
+
+        <label class="field">
+          <span class="label">Print size <span class="value" id="print-size-val">100%</span></span>
+          <input type="range" id="print-size" min="10" max="100" step="0.5" value="100">
+        </label>
+
+        <label class="field">
+          <span class="label">Across <span class="value" id="print-across-val">50%</span></span>
+          <input type="range" id="print-across" min="0" max="100" step="0.5" value="50">
+        </label>
+
+        <label class="field">
+          <span class="label">Down <span class="value" id="print-down-val">0%</span></span>
+          <input type="range" id="print-down" min="0" max="100" step="0.5" value="0">
+        </label>
+        <p class="hint">At 100% the print is as large as its shape allows in the print area.
+          Across and down run from one edge of the area to the other, so a print that already
+          spans it one way has nowhere to go that way.</p>
+
+        <button class="btn small" id="print-reset" type="button">Reset the front</button>
+      </div>
+    </section>
+
     <section class="panel">
       <h2>Colours</h2>
 
@@ -446,6 +488,11 @@
       <button class="btn primary wide" id="download" type="button">Download PNG</button>
       <p class="hint" id="download-note">The contours are traced again at the full size,
         so a 4× file is genuinely sharper rather than an enlargement.</p>
+
+      <button class="btn wide" id="download-mockup" type="button" disabled>Download mockup</button>
+      <p class="hint">The shirt on the stage with the print on it, at the photo's full size.
+        The print is drawn afresh at the size it covers there, not enlarged from the
+        preview.</p>
     </section>
 
   </div>
