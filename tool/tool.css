@@ -137,6 +137,20 @@ main {
 }
 #mockup.dragging { cursor: grabbing; }
 
+/* The shirt colours: a square of each, with radios underneath like the view
+   switch, so arrow keys move between them. */
+.shirt-colours { display: flex; flex-wrap: wrap; gap: 10px; }
+.shirt-colours label { position: relative; cursor: pointer; }
+.shirt-colours input { position: absolute; opacity: 0; pointer-events: none; }
+.shirt-colours span {
+  display: block;
+  width: 34px;
+  height: 34px;
+  border: var(--edge) solid var(--ink);
+}
+.shirt-colours input:checked + span { box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--accent); }
+.shirt-colours input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 5px; }
+
 /* The ids above set display, which would beat the hidden attribute. */
 #view[hidden], #mockup[hidden] { display: none; }
 

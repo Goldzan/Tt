@@ -45,8 +45,8 @@
    * past. Measured off the photos. The two are the same size; the back's sits
    * higher because its collar does. */
   var PRINT_AREA = {
-    front: { left: 0.334, top: 0.2885, right: 0.806, bottom: 0.6325 },
-    back: { left: 0.334, top: 0.2475, right: 0.665, bottom: 0.59 }
+    front: { left: 0.340, top: 0.2955, right: 0.660, bottom: 0.643 },
+    back: { left: 0.340, top: 0.25, right: 0.660, bottom: 0.60 }
   };
 
   /* Where the print starts on each side, inside that area. size is how much
@@ -77,11 +77,11 @@
     widthM: 12000,
     levels: 20,
     detail: 'medium',
-    tidy: false,
+    tidy: true,
 
     imageW: 1600,
     imageH: 1200,
-    margin: 0.04,
+    margin: 0,
 
     preset: 'ink',
     custom: false,
@@ -89,13 +89,20 @@
     ink: '#1a1a1a',
     stops: ['#2e4e6e', '#b24c33'],
     background: '#faf9f5',
-    transparent: false,
+    transparent: true,
 
-    weight: 1,
+    weight: 2,
     indexEvery: 5,
     indexWidth: 2,
     indexTint: false,
     indexInk: '#b24c33',
+
+    /* A line round the map area. The width is in the same canonical units as
+     * the line weights; no ink means the colour of the outermost contour line,
+     * followed through every change of palette until a colour is picked. */
+    borderOn: false,
+    borderWidth: 4,
+    borderInk: null,
 
     /* Lettering. The words are one phrase per line, cycled up the levels, and
      * the default uses the placeholders so a fresh map says something true
@@ -155,6 +162,9 @@
      * the print outside it, whatever shape the picture is. */
     view: 'flat',
     placement: mergePlacement(PLACEMENT_DEFAULTS),
+    // Which photo the print goes on; one of SHIRT_COLOURS. Shared by both
+    // sides, the way a real shirt is.
+    shirtColour: 'white',
 
     scale: 1,
     filename: ''
@@ -676,6 +686,22 @@
    * the preview passes nothing and the cached trace is used.
    */
   function specFor(width, height, traced) {
+    return render.withBorder(designSpecFor(width, height, traced), borderOptions());
+  }
+
+  /** The border the controls describe — one helper, so preview and PNG agree. */
+  function borderOptions() {
+    return {
+      on: state.borderOn,
+      width: state.borderWidth,
+      // Null follows the outermost contour line, whatever colour that is now.
+      ink: state.borderInk ? palettes.parse(state.borderInk) : null,
+      margin: state.margin
+    };
+  }
+
+  /** The design's own picture, before any border goes round it. */
+  function designSpecFor(width, height, traced) {
     if (isAscii()) {
       return render.asciiGeometry(cache.grid, palette(), width, height, asciiOptions());
     }
@@ -710,6 +736,7 @@
     var design = designFrame();
     var spec = specFor(design.width, design.height);
     cache.geometry = spec;
+    syncBorderInk(spec);
 
     var canvas = $('view');
     var dpr = Math.min(2, global.devicePixelRatio || 1);
@@ -744,6 +771,22 @@
     paintMockup();
   }
 
+  /**
+   * The border's colour picker, while the border follows the contours.
+   *
+   * What it follows is only known once a spec has been made — another palette
+   * or another design changes the outermost line's colour — so the picker is
+   * brought up to date after each one. A picked colour is left alone.
+   */
+  function syncBorderInk(spec) {
+    var following = !state.borderInk;
+    if (following && spec.border) $('border-ink').value = palettes.hex(spec.border.colour);
+    $('border-match').disabled = following;
+    $('border-note').textContent = following
+      ? 'Following the colour of the outermost contour line.'
+      : 'Your own colour. Match the contours to follow them again.';
+  }
+
   /* ----------------------------------------------------------------- mockup */
 
   var PRINT_FIELDS = { 'print-size': 'size', 'print-across': 'across', 'print-down': 'down' };
@@ -770,9 +813,24 @@
     ctx.globalCompositeOperation = 'source-over';
   }
 
+  /* The shirt colours there are photos of, with the names the panel shows. The
+   * photos are the <img> tags on the stage, one per side and colour, so a new
+   * colour is two photos, a tag for each, a line here and a swatch. */
+  var SHIRT_COLOURS = { white: 'White', blue: 'Blue', green: 'Green', pink: 'Pink' };
+
+  /** The chosen shirt colour, or white if it is not one there are photos of. */
+  function currentShirtColour() {
+    return SHIRT_COLOURS[state.shirtColour] ? state.shirtColour : 'white';
+  }
+
+  /** The <img> for a side in the chosen colour. */
+  function shirtImage(side) {
+    return $('shirt-' + side + '-' + currentShirtColour());
+  }
+
   /** The photo for a side, or null while it is still being decoded. */
   function shirtPhoto(side) {
-    var photo = $('shirt-' + side);
+    var photo = shirtImage(side);
     return photo && photo.complete && photo.naturalWidth ? photo : null;
   }
 
@@ -793,7 +851,7 @@
     var photo = shirtPhoto(state.view);
     if (!photo) {
       // An inlined image still decodes in its own time; draw once it has.
-      $('shirt-' + state.view).addEventListener('load', paintMockup, { once: true });
+      shirtImage(state.view).addEventListener('load', paintMockup, { once: true });
       return;
     }
 
@@ -811,24 +869,20 @@
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     compose(ctx, photo, $('view'), rect, canvas.width, canvas.height);
 
-    // Where the print ends, which the multiply has just hidden wherever the
-    // picture is white. The preview's alone: the download is the shirt as it
-    // would be printed, with no guides on it.
-    ctx.save();
-    ctx.setLineDash([5 * dpr, 4 * dpr]);
-    ctx.lineWidth = dpr;
-    ctx.strokeStyle = 'rgba(178, 76, 51, 0.6)';
-    ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
-
     // While the print is being dragged, the area it is held inside, so the
-    // place where it stops moving is not a mystery.
+    // place where it stops moving is not a mystery. The preview's alone: the
+    // download is the shirt as it would be printed, with no guides on it. Mid
+    // grey, because it has to show on the dark shirts as well as the light.
     if (canvas.classList.contains('dragging')) {
       var area = PRINT_AREA[state.view];
-      ctx.strokeStyle = 'rgba(23, 23, 26, 0.35)';
+      ctx.save();
+      ctx.setLineDash([5 * dpr, 4 * dpr]);
+      ctx.lineWidth = dpr;
+      ctx.strokeStyle = 'rgba(128, 128, 128, 0.9)';
       ctx.strokeRect(area.left * canvas.width, area.top * canvas.height,
         (area.right - area.left) * canvas.width, (area.bottom - area.top) * canvas.height);
+      ctx.restore();
     }
-    ctx.restore();
   }
 
   /**
@@ -850,6 +904,11 @@
     $('shirt-hint').hidden = shirt;
     $('shirt-rows').hidden = !shirt;
     $('shirt-side').textContent = shirt ? '— ' + state.view : '';
+
+    Array.prototype.forEach.call(doc.getElementsByName('shirt-colour'), function (radio) {
+      radio.checked = radio.value === currentShirtColour();
+    });
+    $('shirt-colour-val').textContent = SHIRT_COLOURS[currentShirtColour()];
 
     $('download-mockup').textContent = shirt
       ? 'Download ' + state.view + ' mockup'
@@ -976,9 +1035,9 @@
       });
   }
 
-  function mockupFilename(side) {
+  function mockupFilename(side, colour) {
     var typed = $('filename').value.trim().replace(/\.png$/i, '');
-    return (typed || slug(state.place)) + '-' + side + '-mockup.png';
+    return (typed || slug(state.place)) + '-' + side + '-' + colour + '-mockup.png';
   }
 
   /**
@@ -1001,6 +1060,7 @@
     }
 
     var side = state.view;
+    var colour = currentShirtColour();
     var photo = shirtPhoto(side);
     if (!photo) {
       status('The shirt photo is still loading — try again in a moment.', false);
@@ -1029,7 +1089,7 @@
       .then(function (print) {
         var canvas = render.offscreen(width, height);
         compose(canvas.getContext('2d'), photo, print, rect, width, height);
-        return render.toPng(canvas, mockupFilename(side));
+        return render.toPng(canvas, mockupFilename(side, colour));
       })
       .then(function (blob) {
         status('Saved the ' + side + ' mockup, ' + width + ' × ' + height + ' PNG (' +
@@ -1740,6 +1800,30 @@
       repaint();
     });
 
+    /* --------------------------------------------------------------- border */
+
+    $('border-on').addEventListener('change', function () {
+      state.borderOn = $('border-on').checked;
+      $('border-rows').hidden = !state.borderOn;
+      repaint();
+    });
+
+    $('border-width').addEventListener('input', function () {
+      state.borderWidth = parseFloat($('border-width').value);
+      $('border-width-val').textContent = fixed(state.borderWidth, 1);
+      repaint();
+    });
+
+    $('border-ink').addEventListener('input', function () {
+      state.borderInk = $('border-ink').value;
+      repaint();
+    });
+
+    $('border-match').addEventListener('click', function () {
+      state.borderInk = null;
+      repaint();
+    });
+
     /* --------------------------------------------------------------- mockup */
 
     Array.prototype.forEach.call(doc.getElementsByName('view'), function (radio) {
@@ -1752,6 +1836,17 @@
         // a guess at its width rather than a measurement.
         if (isShirt()) paintMockup();
         else paint();
+      });
+    });
+
+    // Another colour is only another photo under the same print: a redraw of
+    // the shirt, and nothing about the picture or its placement moves.
+    Array.prototype.forEach.call(doc.getElementsByName('shirt-colour'), function (radio) {
+      radio.addEventListener('change', function () {
+        if (!radio.checked) return;
+        state.shirtColour = radio.value;
+        syncMockup();
+        paintMockup();
       });
     });
 
@@ -2033,6 +2128,14 @@
     $('text-gap-val').textContent = fixed(state.textGap, 1) + ' em';
     $('text-keep-lines').checked = state.textKeepLines;
     syncWordCount();
+
+    $('border-on').checked = state.borderOn;
+    $('border-rows').hidden = !state.borderOn;
+    $('border-width').value = state.borderWidth;
+    $('border-width-val').textContent = fixed(state.borderWidth, 1);
+    // A followed colour is filled in by the next paint, which knows it.
+    if (state.borderInk) $('border-ink').value = state.borderInk;
+    $('border-match').disabled = !state.borderInk;
 
     $('ascii-cols').value = state.asciiCols;
     $('ascii-cols-val').textContent = state.asciiCols;

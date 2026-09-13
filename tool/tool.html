@@ -31,9 +31,16 @@
     <canvas id="view" width="1600" height="1200"></canvas>
     <canvas id="mockup" width="900" height="900" hidden
             aria-label="The map printed on a T-shirt. Drag to move the print."></canvas>
-    <!-- The shirt photos, inlined by the build. Drawn into the mockup, never shown. -->
-    <img id="shirt-front" data-inline="assets/Front.png" alt="" hidden>
-    <img id="shirt-back" data-inline="assets/Back.png" alt="" hidden>
+    <!-- The shirt photos, one per side and colour, inlined by the build. Drawn
+         into the mockup, never shown. -->
+    <img id="shirt-front-white" data-inline="assets/Front.png" alt="" hidden>
+    <img id="shirt-back-white" data-inline="assets/Back.png" alt="" hidden>
+    <img id="shirt-front-blue" data-inline="assets/Front_Blue.png" alt="" hidden>
+    <img id="shirt-back-blue" data-inline="assets/Back_Blue.png" alt="" hidden>
+    <img id="shirt-front-green" data-inline="assets/Front_Green.png" alt="" hidden>
+    <img id="shirt-back-green" data-inline="assets/Back_Green.png" alt="" hidden>
+    <img id="shirt-front-pink" data-inline="assets/Front_Pink.png" alt="" hidden>
+    <img id="shirt-back-pink" data-inline="assets/Back_Pink.png" alt="" hidden>
     <div class="readout">
       <span id="status">Loading…</span>
       <span id="stats"></span>
@@ -314,6 +321,20 @@
         the picture to see the map printed on a shirt.</p>
 
       <div id="shirt-rows" hidden>
+        <div class="field">
+          <span class="label">Shirt colour <span class="value" id="shirt-colour-val">White</span></span>
+          <div class="shirt-colours" role="radiogroup" aria-label="Shirt colour">
+            <label title="White"><input type="radio" name="shirt-colour" value="white"
+              aria-label="White" checked><span style="background:#f4f4f6"></span></label>
+            <label title="Blue"><input type="radio" name="shirt-colour" value="blue"
+              aria-label="Blue"><span style="background:#5a78b8"></span></label>
+            <label title="Green"><input type="radio" name="shirt-colour" value="green"
+              aria-label="Green"><span style="background:#5b6150"></span></label>
+            <label title="Pink"><input type="radio" name="shirt-colour" value="pink"
+              aria-label="Pink"><span style="background:#f2c9dc"></span></label>
+          </div>
+        </div>
+
         <p class="hint">Drag on the shirt to move the print. It stays inside the shirt's print
           area, which is outlined while you drag. The front and the back each keep their own
           place and size.</p>
@@ -405,6 +426,33 @@
         <div class="field">
           <input type="color" id="index-ink" value="#b24c33" disabled>
         </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Border</h2>
+
+      <label class="check">
+        <input type="checkbox" id="border-on">
+        <span><b>Draw a border</b>
+          <span class="hint">A line round the edge of the map. It sits on the map itself, so it
+            shows with no margin too.</span></span>
+      </label>
+
+      <div id="border-rows" hidden>
+        <label class="field">
+          <span class="label">Thickness <span class="value" id="border-width-val">4.0</span></span>
+          <input type="range" id="border-width" min="0.5" max="30" step="0.5" value="4">
+        </label>
+
+        <div class="row tight">
+          <label class="field grow">
+            <span class="label">Colour</span>
+            <input type="color" id="border-ink" value="#1a1a1a">
+          </label>
+          <button class="btn small" id="border-match" type="button" disabled>Match the contours</button>
+        </div>
+        <p class="hint" id="border-note">Following the colour of the outermost contour line.</p>
       </div>
     </section>
 

@@ -581,7 +581,7 @@
    * With lettering on, the stroke is what the words replace, so it is drawn
    * only if the picture asked to keep it — underneath, so the words sit on top.
    */
-  function draw(canvas, spec) {
+  function drawPicture(canvas, spec) {
     var ctx = canvas.getContext('2d');
     var scale = canvas.width / spec.width;
     var text = spec.text;
@@ -717,6 +717,73 @@
     return canvas;
   }
 
+  /* -------------------------------------------------------------- border */
+
+  /**
+   * The colour of the outermost line a picture draws: its lowest level.
+   *
+   * Taken from the spec rather than from the palette, so it is the colour
+   * actually on the page — the water design brightens its crest lines, an
+   * index contour may have an ink of its own — and a design with no lines
+   * answers with its lowest tone instead.
+   */
+  function outermostInk(spec) {
+    if (spec.layers && spec.layers.length) {
+      return spec.layers.reduce(function (low, layer) {
+        return layer.index < low.index ? layer : low;
+      }).colour;
+    }
+    if (spec.css && spec.css.length) return Topo.palettes.parse(spec.css[0]);
+    return [0, 0, 0];
+  }
+
+  /**
+   * Give a picture a border round its map area, if one is asked for.
+   *
+   * Any design's spec will do, because the border is the one thing they all
+   * draw the same way. The width is in the canonical 1000-wide units the line
+   * weights use, so the preview and a 4x download carry the same border at two
+   * scales. No colour means the outermost contour's.
+   */
+  function withBorder(spec, options) {
+    if (!options || !options.on || !(options.width > 0)) return spec;
+    spec.border = {
+      area: frame(spec.width, spec.height, options.margin),
+      lineWidth: options.width * (spec.width / DESIGN_WIDTH),
+      colour: options.ink || outermostInk(spec)
+    };
+    return spec;
+  }
+
+  /**
+   * Stroke the border, last, over whatever the design drew.
+   *
+   * Inset by half its width, so the whole line lies on the map: centred on
+   * the edge, half of it would hang off a picture that has no margin. Mitred,
+   * because a frame with rounded corners reads as a sticker.
+   */
+  function drawBorder(canvas, spec) {
+    var border = spec.border;
+    var area = border.area;
+    var ctx = canvas.getContext('2d');
+    var scale = canvas.width / spec.width;
+    var half = Math.min(border.lineWidth, area.w, area.h) / 2;
+
+    ctx.setTransform(scale, 0, 0, scale, 0, 0);
+    ctx.lineJoin = 'miter';
+    ctx.strokeStyle = Topo.palettes.css(border.colour);
+    ctx.lineWidth = half * 2;
+    ctx.strokeRect(area.x + half, area.y + half, area.w - 2 * half, area.h - 2 * half);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+  }
+
+  /** The picture, and then its border if it has one. */
+  function draw(canvas, spec) {
+    drawPicture(canvas, spec);
+    if (spec.border) drawBorder(canvas, spec);
+    return canvas;
+  }
+
   /**
    * Trace an elevation grid into the given area of a picture.
    *
@@ -794,6 +861,7 @@
     TONES: TONES,
     isRing: isRing,
     draw: draw,
+    withBorder: withBorder,
     trace: trace,
     offscreen: offscreen,
     toPng: toPng
