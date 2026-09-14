@@ -64,14 +64,19 @@
    * it, so the map gives up a band on those two sides to make room. The bands
    * are sized off the picture's width in the same canonical units as the line
    * weights, so the preview and a 4x download leave the same room.
+   *
+   * With captions.centre the map also gives up a strip on its left as wide as
+   * the one on its right, which puts it in the middle of the picture across.
+   * Only the map moves: the labels are placed off its edges as ever, so they
+   * go round it wherever it sits.
    */
   function frame(width, height, margin) {
     var labelled = margin !== null && typeof margin === 'object';
     var bands = captionBands(width, labelled ? margin.captions : null);
     var m = Math.round(Math.min(width, height) * ((labelled ? margin.edge : margin) || 0));
-    var w = Math.max(1, width - 2 * m - bands.right);
+    var w = Math.max(1, width - 2 * m - bands.left - bands.right);
     var h = Math.max(1, height - 2 * m - bands.bottom);
-    return { x: m, y: m, w: w, h: h, aspect: w / h };
+    return { x: m + bands.left, y: m, w: w, h: h, aspect: w / h };
   }
 
   /**
@@ -856,19 +861,23 @@
    * edge, so no label is cut by it, whatever its size.
    */
   function captionBands(width, captions) {
-    if (!captions || !captions.on || !captions.sizes) return { bottom: 0, right: 0 };
+    if (!captions || !captions.on || !captions.sizes) return { bottom: 0, right: 0, left: 0 };
     var sizes = captions.sizes;
     var scale = width / DESIGN_WIDTH;
     var text = Math.max(sizes.name || 0, sizes.coords || 0);
     var reach = markReach(sizes.brand || 0, sizes.logo || 0);
     var mark = reach.near + reach.far;
+    var right = mark > 0 ? Math.round((CAPTION.gap + mark + CAPTION.edge) * scale) : 0;
     return {
       // Tallest letter to deepest descender, since the line of text is
       // dropped far enough for its tallest letter to keep off the gap.
       bottom: text > 0
         ? Math.round((CAPTION.gap + text * (CAPTION.ascent + CAPTION.descent) + CAPTION.edge) * scale)
         : 0,
-      right: mark > 0 ? Math.round((CAPTION.gap + mark + CAPTION.edge) * scale) : 0
+      right: right,
+      // A centred map keeps the same clear strip on its left, with nothing in
+      // it, so it has as much room either side.
+      left: captions.centre ? right : 0
     };
   }
 

@@ -116,6 +116,9 @@
     captionCoordsSize: 18,
     captionBrandSize: 17,
     captionLogoSize: 14,
+    // Centres the map across the picture by clearing a strip on its left to
+    // match the mark's on its right. The labels still go round the map.
+    captionCentre: false,
     captionInk: null,
 
     /* Lettering. The words are one phrase per line, cycled up the levels, and
@@ -239,7 +242,7 @@
   function marginSpec() {
     return {
       edge: state.margin,
-      captions: { on: state.captionsOn, sizes: captionSizes() }
+      captions: { on: state.captionsOn, sizes: captionSizes(), centre: state.captionCentre }
     };
   }
 
@@ -694,7 +697,8 @@
 
         var traceKey = [terrainKey, state.levels, state.tidy, state.margin,
           state.captionsOn, state.captionNameSize, state.captionCoordsSize,
-          state.captionBrandSize, state.captionLogoSize, state.imageW, state.imageH].join('|');
+          state.captionBrandSize, state.captionLogoSize, state.captionCentre,
+          state.imageW, state.imageH].join('|');
         if (cache.result && cache.traceKey === traceKey) return cache.result;
 
         if (traceAbort) traceAbort.abort();
@@ -2083,6 +2087,12 @@
       schedule();
     });
 
+    // Centring moves the map's edges too, so it reruns like the rest.
+    $('caption-centre').addEventListener('change', function () {
+      state.captionCentre = $('caption-centre').checked;
+      schedule();
+    });
+
     Object.keys(CAPTION_SIZES).forEach(function (id) {
       $(id).addEventListener('input', function () {
         state[CAPTION_SIZES[id]] = parseFloat($(id).value);
@@ -2424,6 +2434,7 @@
     $('caption-on').checked = state.captionsOn;
     $('caption-rows').hidden = !state.captionsOn;
     $('caption-name').value = state.captionName;
+    $('caption-centre').checked = state.captionCentre;
     $('caption-name').placeholder = state.place;
     Object.keys(CAPTION_SIZES).forEach(function (id) {
       $(id).value = state[CAPTION_SIZES[id]];

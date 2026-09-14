@@ -1862,6 +1862,14 @@ footer a { color: inherit; }
         <p class="hint">Left empty, it is the place you searched for. The coordinates are
           the middle of the map.</p>
 
+        <label class="check">
+          <input type="checkbox" id="caption-centre">
+          <span><b>Keep the map centred</b>
+            <span class="hint">Leaves as much clear room on the map's left as the Altytude
+              mark takes on its right, so the map sits in the middle of the picture across.
+              The labels stay in their places round it.</span></span>
+        </label>
+
         <h3>Sizes</h3>
 
         <label class="field">
@@ -4787,14 +4795,19 @@ footer a { color: inherit; }
    * it, so the map gives up a band on those two sides to make room. The bands
    * are sized off the picture's width in the same canonical units as the line
    * weights, so the preview and a 4x download leave the same room.
+   *
+   * With captions.centre the map also gives up a strip on its left as wide as
+   * the one on its right, which puts it in the middle of the picture across.
+   * Only the map moves: the labels are placed off its edges as ever, so they
+   * go round it wherever it sits.
    */
   function frame(width, height, margin) {
     var labelled = margin !== null && typeof margin === 'object';
     var bands = captionBands(width, labelled ? margin.captions : null);
     var m = Math.round(Math.min(width, height) * ((labelled ? margin.edge : margin) || 0));
-    var w = Math.max(1, width - 2 * m - bands.right);
+    var w = Math.max(1, width - 2 * m - bands.left - bands.right);
     var h = Math.max(1, height - 2 * m - bands.bottom);
-    return { x: m, y: m, w: w, h: h, aspect: w / h };
+    return { x: m + bands.left, y: m, w: w, h: h, aspect: w / h };
   }
 
   /**
@@ -5579,19 +5592,23 @@ footer a { color: inherit; }
    * edge, so no label is cut by it, whatever its size.
    */
   function captionBands(width, captions) {
-    if (!captions || !captions.on || !captions.sizes) return { bottom: 0, right: 0 };
+    if (!captions || !captions.on || !captions.sizes) return { bottom: 0, right: 0, left: 0 };
     var sizes = captions.sizes;
     var scale = width / DESIGN_WIDTH;
     var text = Math.max(sizes.name || 0, sizes.coords || 0);
     var reach = markReach(sizes.brand || 0, sizes.logo || 0);
     var mark = reach.near + reach.far;
+    var right = mark > 0 ? Math.round((CAPTION.gap + mark + CAPTION.edge) * scale) : 0;
     return {
       // Tallest letter to deepest descender, since the line of text is
       // dropped far enough for its tallest letter to keep off the gap.
       bottom: text > 0
         ? Math.round((CAPTION.gap + text * (CAPTION.ascent + CAPTION.descent) + CAPTION.edge) * scale)
         : 0,
-      right: mark > 0 ? Math.round((CAPTION.gap + mark + CAPTION.edge) * scale) : 0
+      right: right,
+      // A centred map keeps the same clear strip on its left, with nothing in
+      // it, so it has as much room either side.
+      left: captions.centre ? right : 0
     };
   }
 
@@ -6007,6 +6024,9 @@ footer a { color: inherit; }
     captionCoordsSize: 18,
     captionBrandSize: 17,
     captionLogoSize: 14,
+    // Centres the map across the picture by clearing a strip on its left to
+    // match the mark's on its right. The labels still go round the map.
+    captionCentre: false,
     captionInk: null,
 
     /* Lettering. The words are one phrase per line, cycled up the levels, and
@@ -6130,7 +6150,7 @@ footer a { color: inherit; }
   function marginSpec() {
     return {
       edge: state.margin,
-      captions: { on: state.captionsOn, sizes: captionSizes() }
+      captions: { on: state.captionsOn, sizes: captionSizes(), centre: state.captionCentre }
     };
   }
 
@@ -6585,7 +6605,8 @@ footer a { color: inherit; }
 
         var traceKey = [terrainKey, state.levels, state.tidy, state.margin,
           state.captionsOn, state.captionNameSize, state.captionCoordsSize,
-          state.captionBrandSize, state.captionLogoSize, state.imageW, state.imageH].join('|');
+          state.captionBrandSize, state.captionLogoSize, state.captionCentre,
+          state.imageW, state.imageH].join('|');
         if (cache.result && cache.traceKey === traceKey) return cache.result;
 
         if (traceAbort) traceAbort.abort();
@@ -7974,6 +7995,12 @@ footer a { color: inherit; }
       schedule();
     });
 
+    // Centring moves the map's edges too, so it reruns like the rest.
+    $('caption-centre').addEventListener('change', function () {
+      state.captionCentre = $('caption-centre').checked;
+      schedule();
+    });
+
     Object.keys(CAPTION_SIZES).forEach(function (id) {
       $(id).addEventListener('input', function () {
         state[CAPTION_SIZES[id]] = parseFloat($(id).value);
@@ -8315,6 +8342,7 @@ footer a { color: inherit; }
     $('caption-on').checked = state.captionsOn;
     $('caption-rows').hidden = !state.captionsOn;
     $('caption-name').value = state.captionName;
+    $('caption-centre').checked = state.captionCentre;
     $('caption-name').placeholder = state.place;
     Object.keys(CAPTION_SIZES).forEach(function (id) {
       $(id).value = state[CAPTION_SIZES[id]];
