@@ -938,6 +938,16 @@ main {
   background-position: 0 0, 9px 9px;
 }
 
+/* The same board in dark squares, behind a picture drawn in light ink. White
+   lines on the light one are indistinguishable from its white squares, and
+   read as holes in the picture rather than as lines on it. */
+#view.alpha.on-dark {
+  background-color: #2b2b30;
+  background-image:
+    linear-gradient(45deg, #3c3c43 25%, transparent 25%, transparent 75%, #3c3c43 75%),
+    linear-gradient(45deg, #3c3c43 25%, transparent 25%, transparent 75%, #3c3c43 75%);
+}
+
 /* The shirt is square, so it is held to the window's height as well as the
    stage's width — otherwise the sticky stage would run off the bottom. */
 #mockup {
@@ -6154,8 +6164,10 @@ footer a { color: inherit; }
     canvas.height = Math.round(canvas.width * (state.imageH / state.imageW));
 
     // The checkerboard behind a transparent picture belongs to the page, not to
-    // the artwork, so it is CSS on the canvas rather than pixels in it.
+    // the artwork, so it is CSS on the canvas rather than pixels in it — and a
+    // dark one behind light ink, which would vanish into the light one's white.
     canvas.classList.toggle('alpha', state.transparent);
+    canvas.classList.toggle('on-dark', state.transparent && lightInk(spec));
 
     render.draw(canvas, spec);
 
@@ -6192,6 +6204,28 @@ footer a { color: inherit; }
       : 'Your own colour. Match the contours to follow them again.';
   }
 
+  /**
+   * Is the picture drawn in light ink?
+   *
+   * Asked of the colours actually on it — the lines, the water's crests, a
+   * grid's tones, the border — rather than of the palette, which does not know
+   * what the water design brightens or an index ink replaces. Light is the
+   * average over those being nearer white than black by a margin, so a ramp
+   * that merely ends pale does not count.
+   */
+  function lightInk(spec) {
+    var colours = spec.layers && spec.layers.length
+      ? spec.layers.map(function (layer) { return layer.colour; })
+      : (spec.css || []).map(palettes.parse);
+    if (spec.border) colours.push(spec.border.colour);
+    if (!colours.length) return false;
+
+    var total = colours.reduce(function (sum, rgb) {
+      return sum + (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]) / 255;
+    }, 0);
+    return total / colours.length > 0.6;
+  }
+
   /* ----------------------------------------------------------------- mockup */
 
   var PRINT_FIELDS = { 'print-size': 'size', 'print-across': 'across', 'print-down': 'down' };
@@ -6201,21 +6235,123 @@ footer a { color: inherit; }
   }
 
   /**
-   * The shirt photo, and the print multiplied into it.
+   * The shirt photo, and the print on it.
    *
-   * Multiplied rather than laid over, the way ink takes on cloth: the folds and
-   * shadows of the fabric darken the print, and a white background vanishes
-   * into the white shirt instead of sitting on it like a sticker — which is
-   * also why a transparent one needs nothing special. One function for the
-   * preview and the mockup download, so the two cannot disagree.
+   * The ink is laid on opaque, the way a shirt is printed, and then darkened by
+   * the fabric's folds and shadows so it takes the cloth's shape. It used to be
+   * multiplied straight into the photo, which gets the folds for free but can
+   * only ever darken: white ink came out as whatever colour the shirt was, so on
+   * the blue one white lines were blue — gone. Here the folds come from the
+   * photo in grey, lifted so each shirt's cloth is as bright as the white
+   * one's, and multiplied into the ink alone.
+   *
+   * On the white shirt that lift is 1 and this is the old multiply to within
+   * the photo's faint tint, so a white background still vanishes into the
+   * shirt rather than sitting on it like a sticker. A transparent one needs
+   * nothing special: the ink keeps the print's own coverage, so where there is
+   * none the shirt shows untouched.
+   *
+   * One function for the preview and the mockup download, so the two cannot
+   * disagree.
    */
-  function compose(ctx, photo, print, rect, width, height) {
+  var scratchCanvases = {};
+
+  /** A cleared scratch canvas of this size, kept between calls, ready to read. */
+  function scratch(name, width, height) {
+    var canvas = scratchCanvases[name] ||
+      (scratchCanvases[name] = render.offscreen(width, height));
+    canvas.width = width;
+    canvas.height = height;
+    var ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.imageSmoothingEnabled = true;
+    if ('imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
+    return ctx;
+  }
+
+  function compose(ctx, photo, print, rect, width, height, side) {
     ctx.drawImage(photo, 0, 0, width, height);
     ctx.imageSmoothingEnabled = true;
     if ('imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
-    ctx.globalCompositeOperation = 'multiply';
-    ctx.drawImage(print, rect.x, rect.y, rect.w, rect.h);
-    ctx.globalCompositeOperation = 'source-over';
+
+    // Worked on scratch canvases covering the whole pixels the print touches:
+    // compose runs for every frame of a drag, and nothing else draws on them
+    // in between. Whole pixels so the print is resampled once, onto them, and
+    // the result goes back one to one — resampled twice, a hairline blurs.
+    var x0 = Math.floor(rect.x);
+    var y0 = Math.floor(rect.y);
+    var w = Math.max(1, Math.ceil(rect.x + rect.w) - x0);
+    var h = Math.max(1, Math.ceil(rect.y + rect.h) - y0);
+    var ink = scratch('ink', w, h);
+    var fabric = scratch('fabric', w, h);
+
+    // The print on those pixels, and the cloth under it on the same ones.
+    ink.drawImage(print, rect.x - x0, rect.y - y0, rect.w, rect.h);
+    var sx = photo.naturalWidth / width;
+    var sy = photo.naturalHeight / height;
+    fabric.drawImage(photo, x0 * sx, y0 * sy, w * sx, h * sy, 0, 0, w, h);
+
+    // Per pixel, because the canvas's own multiply cannot do this. Blended into
+    // a part-covered pixel it mixes the cloth into the ink's colour by the
+    // coverage, and cutting back to the coverage afterwards applies it a second
+    // time — so every hairline, which at preview size is every line, came out
+    // faded. Here the colour is multiplied and the coverage left as it was.
+    var lift = fabricLift(photo, side) / 255;
+    var inked = ink.getImageData(0, 0, w, h);
+    var px = inked.data;
+    var cloth = fabric.getImageData(0, 0, w, h).data;
+    for (var i = 0; i < px.length; i += 4) {
+      if (!px[i + 3]) continue;
+      var shade = (0.2126 * cloth[i] + 0.7152 * cloth[i + 1] + 0.0722 * cloth[i + 2]) * lift;
+      // A clamped array: past 255 is 255, and the rounding is done for us.
+      px[i] *= shade;
+      px[i + 1] *= shade;
+      px[i + 2] *= shade;
+    }
+    ink.putImageData(inked, 0, 0);
+
+    ctx.drawImage(ink.canvas, x0, y0);
+  }
+
+  /*
+   * How much to brighten a photo's fabric, once greyed, to bring its cloth up
+   * to the white shirt's: 1 for the white shirt itself, more for the others.
+   *
+   * Measured over the print area, the only cloth the print ever sits on, and
+   * remembered per photo. The white shirt is the reference rather than pure
+   * white, so that shirt keeps its own brightness and its print does not come
+   * up lighter than the fabric around it.
+   */
+  var fabricMemo = {};
+
+  function fabricLevel(photo, side) {
+    if (fabricMemo[photo.id] !== undefined) return fabricMemo[photo.id];
+
+    var area = PRINT_AREA[side];
+    var size = 64;
+    var probe = render.offscreen(size, size).getContext('2d');
+    probe.drawImage(photo,
+      area.left * photo.naturalWidth, area.top * photo.naturalHeight,
+      (area.right - area.left) * photo.naturalWidth, (area.bottom - area.top) * photo.naturalHeight,
+      0, 0, size, size);
+
+    var data = probe.getImageData(0, 0, size, size).data;
+    var total = 0;
+    for (var i = 0; i < data.length; i += 4) {
+      total += 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+    }
+    fabricMemo[photo.id] = total / (data.length / 4) / 255;
+    return fabricMemo[photo.id];
+  }
+
+  function fabricLift(photo, side) {
+    var white = $('shirt-' + side + '-white');
+    // The white photo is still decoding: lift to a white shirt's usual level
+    // rather than not at all, and measure properly on the next frame.
+    var reference = white && white.complete && white.naturalWidth
+      ? fabricLevel(white, side)
+      : 0.95;
+    var level = fabricLevel(photo, side);
+    return level > 0 ? +(reference / level).toFixed(4) : 1;
   }
 
   /* The shirt colours there are photos of, with the names the panel shows. The
@@ -6272,7 +6408,7 @@ footer a { color: inherit; }
     var rect = printRect(state.view, canvas.width, canvas.height);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    compose(ctx, photo, $('view'), rect, canvas.width, canvas.height);
+    compose(ctx, photo, $('view'), rect, canvas.width, canvas.height, state.view);
 
     // While the print is being dragged, the area it is held inside, so the
     // place where it stops moving is not a mystery. The preview's alone: the
@@ -6493,7 +6629,7 @@ footer a { color: inherit; }
       function (step, total) { progress(total ? step / total : 0); })
       .then(function (print) {
         var canvas = render.offscreen(width, height);
-        compose(canvas.getContext('2d'), photo, print, rect, width, height);
+        compose(canvas.getContext('2d'), photo, print, rect, width, height, side);
         return render.toPng(canvas, mockupFilename(side, colour));
       })
       .then(function (blob) {

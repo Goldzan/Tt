@@ -124,6 +124,16 @@ main {
   background-position: 0 0, 9px 9px;
 }
 
+/* The same board in dark squares, behind a picture drawn in light ink. White
+   lines on the light one are indistinguishable from its white squares, and
+   read as holes in the picture rather than as lines on it. */
+#view.alpha.on-dark {
+  background-color: #2b2b30;
+  background-image:
+    linear-gradient(45deg, #3c3c43 25%, transparent 25%, transparent 75%, #3c3c43 75%),
+    linear-gradient(45deg, #3c3c43 25%, transparent 25%, transparent 75%, #3c3c43 75%);
+}
+
 /* The shirt is square, so it is held to the window's height as well as the
    stage's width — otherwise the sticky stage would run off the bottom. */
 #mockup {
