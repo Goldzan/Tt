@@ -100,7 +100,7 @@
     /* A line round the map area. The width is in the same canonical units as
      * the line weights; no ink means the colour of the outermost contour line,
      * followed through every change of palette until a colour is picked. */
-    borderOn: false,
+    borderOn: true,
     borderWidth: 4,
     borderInk: null,
 
