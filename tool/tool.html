@@ -41,6 +41,9 @@
     <img id="shirt-back-green" data-inline="assets/Back_Green.png" alt="" hidden>
     <img id="shirt-front-pink" data-inline="assets/Front_Pink.png" alt="" hidden>
     <img id="shirt-back-pink" data-inline="assets/Back_Pink.png" alt="" hidden>
+    <!-- The Altytude logo the labels carry, inlined by the build and drawn
+         into the picture, never shown. -->
+    <img id="altytude-logo" data-inline="assets/Altytude_Logo.svg" alt="" hidden>
     <div class="readout">
       <span id="status">Loading…</span>
       <span id="stats"></span>
@@ -453,6 +456,61 @@
           <button class="btn small" id="border-match" type="button" disabled>Match the contours</button>
         </div>
         <p class="hint" id="border-note">Following the colour of the outermost contour line.</p>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Labels</h2>
+
+      <label class="check">
+        <input type="checkbox" id="caption-on">
+        <span><b>Label the map</b>
+          <span class="hint">Its name under the bottom-left corner, its coordinates under the
+            bottom-right, and the Altytude mark up the right-hand side. The map gives up a
+            strip on those two sides to make room.</span></span>
+      </label>
+
+      <div id="caption-rows" hidden>
+        <label class="field">
+          <span class="label">Name</span>
+          <input type="text" id="caption-name" spellcheck="false" autocomplete="off">
+        </label>
+        <p class="hint">Left empty, it is the place you searched for. The coordinates are
+          the middle of the map.</p>
+
+        <h3>Sizes</h3>
+
+        <label class="field">
+          <span class="label">Name <span class="value" id="caption-name-size-val">40</span></span>
+          <input type="range" id="caption-name-size" min="8" max="120" step="1" value="40">
+        </label>
+
+        <label class="field">
+          <span class="label">Coordinates <span class="value" id="caption-coords-size-val">18</span></span>
+          <input type="range" id="caption-coords-size" min="5" max="60" step="1" value="18">
+        </label>
+
+        <label class="field">
+          <span class="label">Altytude <span class="value" id="caption-brand-size-val">17</span></span>
+          <input type="range" id="caption-brand-size" min="5" max="60" step="1" value="17">
+        </label>
+
+        <label class="field">
+          <span class="label">Logo <span class="value" id="caption-logo-size-val">14</span></span>
+          <input type="range" id="caption-logo-size" min="4" max="80" step="1" value="14">
+        </label>
+        <p class="hint">In thousandths of the picture's width, like the line thickness, so
+          each label keeps its size against the picture at any resolution. Bigger labels
+          take a wider strip from the map; a name too long for its room is set smaller.</p>
+
+        <div class="row tight">
+          <label class="field grow">
+            <span class="label">Colour</span>
+            <input type="color" id="caption-ink" value="#1a1a1a">
+          </label>
+          <button class="btn small" id="caption-match" type="button" disabled>Match the map</button>
+        </div>
+        <p class="hint" id="caption-note">Following the colour of the border.</p>
       </div>
     </section>
 

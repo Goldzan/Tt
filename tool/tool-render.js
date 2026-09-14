@@ -58,11 +58,19 @@
    * a moat. `aspect` is the map area's own shape — not the picture's — because
    * it is the area the ground has to match: bboxFromCentre is given this, and
    * the terrain arrives already the right shape rather than stretched to fit.
+   *
+   * `margin` is that fraction on its own, or { edge, captions } when the
+   * picture is labelled: the labels sit outside the map, under it and beside
+   * it, so the map gives up a band on those two sides to make room. The bands
+   * are sized off the picture's width in the same canonical units as the line
+   * weights, so the preview and a 4x download leave the same room.
    */
   function frame(width, height, margin) {
-    var m = Math.round(Math.min(width, height) * (margin || 0));
-    var w = Math.max(1, width - 2 * m);
-    var h = Math.max(1, height - 2 * m);
+    var labelled = margin !== null && typeof margin === 'object';
+    var bands = captionBands(width, labelled ? margin.captions : null);
+    var m = Math.round(Math.min(width, height) * ((labelled ? margin.edge : margin) || 0));
+    var w = Math.max(1, width - 2 * m - bands.right);
+    var h = Math.max(1, height - 2 * m - bands.bottom);
     return { x: m, y: m, w: w, h: h, aspect: w / h };
   }
 
@@ -107,6 +115,8 @@
       width: width,
       height: height,
       background: options.transparent ? null : (palette.background || null),
+      // Where the map sits, so drawing can be held inside it; see drawPicture.
+      area: frame(width, height, options.margin),
       text: text && text.on ? text : null,
       layers: layers(result, palette, width, options.weight, text ? text.size : 0)
     };
@@ -595,7 +605,20 @@
       ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
 
+    /*
+     * Held inside the map rectangle. A contour is traced right up to the edge,
+     * so its stroke — and the round cap on its end — hangs half a line width
+     * past it. Where the edge was the picture's own the canvas cut that off;
+     * with a margin or labels beyond it, it showed past the border. Saved so
+     * each way out of here can put the transform and the clip back at once.
+     */
+    ctx.save();
     ctx.scale(scale, scale);
+    if (spec.area) {
+      ctx.beginPath();
+      ctx.rect(spec.area.x, spec.area.y, spec.area.w, spec.area.h);
+      ctx.clip();
+    }
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
@@ -615,7 +638,7 @@
         ? function (i) { return spec.chars[spec.tint[i]]; }
         : function (i) { return spec.text[i]; });
 
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.restore();
       spec.glyphs = glyphs;
       spec.clipped = false;
       return canvas;
@@ -661,7 +684,7 @@
         ctx.globalAlpha = 1;
       }
 
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.restore();
       spec.glyphs = 0;
       spec.clipped = false;
       return canvas;
@@ -706,7 +729,7 @@
       });
     }
 
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.restore();
 
     // Said out loud rather than left as a mystery: at a small enough size the
     // ceiling stops the lettering part way down the picture, and the only cure
@@ -777,10 +800,282 @@
     ctx.setTransform(1, 0, 0, 1, 0, 0);
   }
 
-  /** The picture, and then its border if it has one. */
+  /* -------------------------------------------------------------- labels */
+
+  /*
+   * The face the labels are set in: Space Mono, bold, vendored in assets/fonts
+   * and inlined by the build. The fallbacks are monospace so a browser without
+   * it degrades in kind, as the lettering's do.
+   */
+  var CAPTION_FONT = '"Space Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+  var CAPTION_WEIGHT = 700;
+
+  /*
+   * How the labels are spaced, and how Space Mono is proportioned.
+   *
+   * Every label has its own size — the name, the coordinates, the word
+   * Altytude and the logo each have a slider — in the canonical 1000-wide units
+   * the line weights use. The gap is in those units too, so it stays put while
+   * the sizes move.
+   *
+   * The face's proportions are written down rather than measured, because they
+   * size the bands the map gives up, and so decide what shape of ground is
+   * fetched and traced. A band measured from the font would move when the font
+   * finished loading and send the picture back for new terrain; these are
+   * Space Mono's, a little generous, so any face near it fits as well.
+   */
+  var CAPTION = {
+    gap: 8,         // from the map's edge to the nearest ink
+    edge: 4,        // from the farthest ink to the picture's own edge
+    cap: 0.7,       // the capital height
+    descent: 0.25,  // the deepest descender
+    ascent: 0.8,    // the tallest ascender
+    spacing: 0.35   // between the logo and the word, in the word's size
+  };
+
+  /**
+   * How far the mark — the logo and the word, on their side — reaches either
+   * side of the line through their middles: toward the map, and away from it.
+   * The word is centred on its capitals, so its descenders make the near side
+   * the deeper one; the logo is centred on the same line.
+   *
+   * The near side is exactly what drawMark sets that line out by, so the mark
+   * keeps its gap from the map at every size.
+   */
+  function markReach(brand, logo) {
+    return {
+      near: Math.max(brand * (CAPTION.cap / 2 + CAPTION.descent), logo / 2),
+      far: Math.max(brand * (CAPTION.ascent - CAPTION.cap / 2), logo / 2)
+    };
+  }
+
+  /**
+   * How much room the labels take below and to the right of the map: the gap,
+   * then the deeper of the name and the coordinates underneath, and the mark's
+   * whole reach beside — and in both, a little room before the picture's own
+   * edge, so no label is cut by it, whatever its size.
+   */
+  function captionBands(width, captions) {
+    if (!captions || !captions.on || !captions.sizes) return { bottom: 0, right: 0 };
+    var sizes = captions.sizes;
+    var scale = width / DESIGN_WIDTH;
+    var text = Math.max(sizes.name || 0, sizes.coords || 0);
+    var reach = markReach(sizes.brand || 0, sizes.logo || 0);
+    var mark = reach.near + reach.far;
+    return {
+      // Tallest letter to deepest descender, since the line of text is
+      // dropped far enough for its tallest letter to keep off the gap.
+      bottom: text > 0
+        ? Math.round((CAPTION.gap + text * (CAPTION.ascent + CAPTION.descent) + CAPTION.edge) * scale)
+        : 0,
+      right: mark > 0 ? Math.round((CAPTION.gap + mark + CAPTION.edge) * scale) : 0
+    };
+  }
+
+  function captionFont(size) {
+    return CAPTION_WEIGHT + ' ' + size + 'px ' + CAPTION_FONT;
+  }
+
+  /**
+   * Give a picture its labels, if they are asked for.
+   *
+   * Like the border, any design's spec will do, and no colour means following
+   * the frame: the border's colour when there is one — itself the outermost
+   * contour's unless one was picked — and the outermost contour's when there is
+   * not. The logo is the decoded <img>, or null while it is still decoding, in
+   * which case the word goes on without it until the next repaint.
+   */
+  function withCaptions(spec, options) {
+    if (!options || !options.on || !options.sizes) return spec;
+    var scale = spec.width / DESIGN_WIDTH;
+    var sizes = options.sizes;
+    spec.captions = {
+      area: frame(spec.width, spec.height, options.margin),
+      name: options.name || '',
+      coords: options.coords || '',
+      brand: options.brand || '',
+      logo: options.logo || null,
+      nameSize: (sizes.name || 0) * scale,
+      coordsSize: (sizes.coords || 0) * scale,
+      brandSize: (sizes.brand || 0) * scale,
+      logoSize: (sizes.logo || 0) * scale,
+      gap: CAPTION.gap * scale,
+      colour: options.ink || (spec.border ? spec.border.colour : outermostInk(spec))
+    };
+    return spec;
+  }
+
+  /**
+   * How far the capitals of the current font rise above the baseline.
+   *
+   * Measured, so the tops of the name and the coordinates line up with each
+   * other and sit the same distance under the map whatever size each is; the
+   * fallback is Space Mono's own proportion, for a browser that cannot say.
+   */
+  function capHeight(ctx, size) {
+    var ascent = ctx.measureText('H').actualBoundingBoxAscent;
+    return ascent > 0 ? ascent : size * CAPTION.cap;
+  }
+
+  /**
+   * A line of label text in the current font: how wide it is, how tall its
+   * capitals are, and how far its tallest letter — a t, the dot on an i, a
+   * degree sign — rises above them.
+   */
+  function lineMetrics(ctx, text, size) {
+    var measured = ctx.measureText(text);
+    var cap = capHeight(ctx, size);
+    return {
+      size: size,
+      width: measured.width,
+      cap: cap,
+      over: Math.max(0, (measured.actualBoundingBoxAscent || 0) - cap)
+    };
+  }
+
+  /**
+   * Draw the labels, last, in the bands round the map.
+   *
+   * The coordinates are set first because the name gives way to them: a name
+   * too long to fit beside them is set smaller rather than run through them.
+   * Both hang from the same line just under the map.
+   */
+  function drawCaptions(canvas, spec) {
+    var cap = spec.captions;
+    var area = cap.area;
+    var ctx = canvas.getContext('2d');
+    var scale = canvas.width / spec.width;
+    var top = area.y + area.h + cap.gap;
+    var right = area.x + area.w;
+    var coordsLine = null;
+    var nameLine = null;
+
+    ctx.setTransform(scale, 0, 0, scale, 0, 0);
+    ctx.fillStyle = Topo.palettes.css(cap.colour);
+    ctx.textBaseline = 'alphabetic';
+
+    if (cap.coords && cap.coordsSize > 0) {
+      ctx.font = captionFont(cap.coordsSize);
+      coordsLine = lineMetrics(ctx, cap.coords, cap.coordsSize);
+    }
+
+    if (cap.name && cap.nameSize > 0) {
+      var room = area.w - (coordsLine ? coordsLine.width + 2 * cap.gap : 0);
+      ctx.font = captionFont(cap.nameSize);
+      var width = ctx.measureText(cap.name).width;
+      var size = width > room ? cap.nameSize * Math.max(0, room) / width : cap.nameSize;
+      if (size > 0) {
+        ctx.font = captionFont(size);
+        nameLine = lineMetrics(ctx, cap.name, size);
+      }
+    }
+
+    // The two lines' capitals line up, and that line drops just far enough
+    // for the taller letters of either to keep out of the gap.
+    var capTop = top + Math.max(coordsLine ? coordsLine.over : 0, nameLine ? nameLine.over : 0);
+
+    if (coordsLine) {
+      ctx.font = captionFont(coordsLine.size);
+      ctx.textAlign = 'right';
+      ctx.fillText(cap.coords, right, capTop + coordsLine.cap);
+    }
+    if (nameLine) {
+      ctx.font = captionFont(nameLine.size);
+      ctx.textAlign = 'left';
+      ctx.fillText(cap.name, area.x, capTop + nameLine.cap);
+    }
+
+    drawMark(ctx, cap, right + cap.gap, area.y, area.h, scale);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+  }
+
+  /**
+   * The logo and the word Altytude, turned to read down the right-hand side.
+   *
+   * Turned a quarter clockwise, so the run starts level with the top of the
+   * map and the tops of the letters face away from it. In the turned frame x
+   * runs down the page and negative y points away from the map, so the ink is
+   * kept on the far side of y = 0 — the line a gap out from the map's edge.
+   *
+   * The logo and the word's capitals are centred on one line, so a logo
+   * bigger or smaller than the word still sits in it like a letter of it. That
+   * line is set out as far as the deeper of the two needs — the word's
+   * descenders, or half the logo — which is the same reach the band beside the
+   * map was sized for (markReach). A mark longer than the map is tall is
+   * scaled down to fit.
+   */
+  function drawMark(ctx, cap, x, y, length, scale) {
+    var size = cap.brandSize;
+    var word = cap.brand && size > 0 ? cap.brand : '';
+    var logo = cap.logo && cap.logoSize > 0 ? cap.logo : null;
+    if (!(length > 0) || (!word && !logo)) return;
+
+    var textWidth = 0;
+    var capH = 0;
+    if (word) {
+      ctx.font = captionFont(size);
+      textWidth = ctx.measureText(word).width;
+      capH = capHeight(ctx, size);
+    }
+
+    var logoH = logo ? cap.logoSize : 0;
+    var logoW = logo ? logoH * (logo.naturalWidth / logo.naturalHeight) : 0;
+    var spacing = logo && word ? size * CAPTION.spacing : 0;
+    var total = logoW + spacing + textWidth;
+    var fit = total > length ? length / total : 1;
+    // Set out by the face's written proportions, not its measured ones: a small
+    // size rounds its glyphs up, and measuring would let them creep into the gap.
+    var middle = -markReach(word ? size : 0, logoH).near;
+
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(Math.PI / 2);
+    ctx.scale(fit, fit);
+
+    if (logo) {
+      ctx.drawImage(tintedLogo(logo, cap.colour, logoW * scale * fit, logoH * scale * fit),
+        0, middle - logoH / 2, logoW, logoH);
+    }
+    if (word) {
+      ctx.textAlign = 'left';
+      ctx.fillText(word, logoW + spacing, middle + capH / 2);
+    }
+
+    ctx.restore();
+  }
+
+  /**
+   * The logo in the labels' colour, rasterised at the size it is drawn.
+   *
+   * The SVG carries its own ink, which is not the picture's; filling over it
+   * with source-in keeps its shape and swaps its colour. Done on a scratch
+   * canvas at the pixel size it lands at, so the logo in a 4x download is
+   * drawn from the vector afresh rather than enlarged from the preview's.
+   */
+  var logoScratch = null;
+
+  function tintedLogo(img, colour, width, height) {
+    var w = Math.max(1, Math.ceil(width));
+    var h = Math.max(1, Math.ceil(height));
+    if (!logoScratch) logoScratch = offscreen(w, h);
+    // Resizing clears it, and puts the compositing back to normal as well.
+    logoScratch.width = w;
+    logoScratch.height = h;
+
+    var ctx = logoScratch.getContext('2d');
+    ctx.drawImage(img, 0, 0, w, h);
+    ctx.globalCompositeOperation = 'source-in';
+    ctx.fillStyle = Topo.palettes.css(colour);
+    ctx.fillRect(0, 0, w, h);
+    ctx.globalCompositeOperation = 'source-over';
+    return logoScratch;
+  }
+
+  /** The picture, then its border and its labels if it has them. */
   function draw(canvas, spec) {
     drawPicture(canvas, spec);
     if (spec.border) drawBorder(canvas, spec);
+    if (spec.captions) drawCaptions(canvas, spec);
     return canvas;
   }
 
@@ -862,6 +1157,7 @@
     isRing: isRing,
     draw: draw,
     withBorder: withBorder,
+    withCaptions: withCaptions,
     trace: trace,
     offscreen: offscreen,
     toPng: toPng

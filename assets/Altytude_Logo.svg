@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="210mm"
+   height="153.24326mm"
+   viewBox="0 0 210 153.24326"
+   version="1.1"
+   id="svg1"
+   inkscape:export-filename="Altytude_Logo.png"
+   inkscape:export-xdpi="96"
+   inkscape:export-ydpi="96"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:document-units="mm"
+     showgrid="true"
+     inkscape:zoom="1.0467522"
+     inkscape:cx="396.94207"
+     inkscape:cy="561.25984"
+     inkscape:window-width="2560"
+     inkscape:window-height="1377"
+     inkscape:window-x="1912"
+     inkscape:window-y="-8"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="layer1">
+    <inkscape:grid
+       id="grid1"
+       units="mm"
+       originx="1.2933436e-06"
+       originy="-71.87838"
+       spacingx="0.99999998"
+       spacingy="1"
+       empcolor="#0099e5"
+       empopacity="0.30196078"
+       color="#0099e5"
+       opacity="0.14901961"
+       empspacing="5"
+       enabled="true"
+       visible="true" />
+    <inkscape:page
+       x="0"
+       y="0"
+       width="210"
+       height="153.24326"
+       id="page2"
+       margin="0"
+       bleed="0" />
+  </sodipodi:namedview>
+  <defs
+     id="defs1" />
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1"
+     style="display:inline"
+     transform="translate(2.5276609,-61.767743)">
+    <g
+       fill="none"
+       stroke="#b24c33"
+       stroke-width="1.9"
+       id="g26"
+       style="display:inline;stroke:#1a1a1a;stroke-opacity:1"
+       transform="matrix(8.1081082,0,0,8.1081082,-27.257391,8.6596308)"
+       inkscape:label="Logo">
+      <ellipse
+         cx="16"
+         cy="16"
+         rx="12"
+         ry="8.5"
+         id="ellipse24"
+         style="fill:none;fill-opacity:1;stroke:#1a1a1a;stroke-opacity:1" />
+      <ellipse
+         cx="16"
+         cy="16"
+         rx="7.5"
+         ry="5.1999998"
+         id="ellipse25"
+         style="stroke:#1a1a1a;stroke-opacity:1" />
+      <ellipse
+         cx="16"
+         cy="16"
+         rx="3"
+         ry="2"
+         id="ellipse26"
+         style="stroke:#1a1a1a;stroke-opacity:1" />
+    </g>
+  </g>
+</svg>

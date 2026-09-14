@@ -42,6 +42,20 @@
   src: url(../vendor/source-code-pro.woff2) format("woff2");
 }
 
+/*
+ * The face the labels round the map are set in, inlined the same way and for
+ * the same reason. Only the bold cut is vendored, so only it is declared.
+ * Space Mono is under the SIL Open Font License 1.1 — see assets/fonts/OFL.txt,
+ * which the build copies into the head beside the others.
+ */
+@font-face {
+  font-family: "Space Mono";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url(../assets/fonts/space-mono-700-latin.woff2) format("woff2");
+}
+
 * { box-sizing: border-box; }
 
 body {

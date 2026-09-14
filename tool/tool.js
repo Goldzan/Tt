@@ -104,6 +104,20 @@
     borderWidth: 4,
     borderInk: null,
 
+    /* The labels round the map: a name under its bottom-left corner, the
+     * coordinates under its bottom-right, and the Altytude mark up its right
+     * side. An empty name follows the place; no ink follows the border, and
+     * through it the outermost contour. Each label has its own size, in the
+     * same canonical units as the line weights: a text's font size, and the
+     * logo's height across the strip it sits in. */
+    captionsOn: true,
+    captionName: '',
+    captionNameSize: 40,
+    captionCoordsSize: 18,
+    captionBrandSize: 17,
+    captionLogoSize: 14,
+    captionInk: null,
+
     /* Lettering. The words are one phrase per line, cycled up the levels, and
      * the default uses the placeholders so a fresh map says something true
      * about itself before anyone has typed anything. Sizes are in the same
@@ -190,6 +204,12 @@
     return m >= 1000 ? +(m / 1000).toFixed(3) + ' km' : Math.round(m) + ' m';
   }
 
+  /** The map's centre the way its label writes it: 45.9764° N, 7.6586° E. */
+  function fmtCoords(lat, lng) {
+    return Math.abs(lat).toFixed(4) + '° ' + (lat < 0 ? 'S' : 'N') + ', ' +
+      Math.abs(lng).toFixed(4) + '° ' + (lng < 0 ? 'W' : 'E');
+  }
+
   /*
    * A readout to `places` decimals — or to as many as three when a typed value
    * has them, so that 1.25 typed in reads back as 1.25 rather than as a 1.3
@@ -210,9 +230,40 @@
     return DETAIL[state.detail] || DETAIL.medium;
   }
 
+  /**
+   * The margin as the renderer takes it: the even edge the slider sets, and
+   * the room the labels need under and beside the map. One helper, because
+   * everything that asks where the map sits — the terrain's shape, the trace,
+   * the border, the labels — has to get the same answer.
+   */
+  function marginSpec() {
+    return {
+      edge: state.margin,
+      captions: { on: state.captionsOn, sizes: captionSizes() }
+    };
+  }
+
+  /* The labels' size sliders, and the state each one sets. */
+  var CAPTION_SIZES = {
+    'caption-name-size': 'captionNameSize',
+    'caption-coords-size': 'captionCoordsSize',
+    'caption-brand-size': 'captionBrandSize',
+    'caption-logo-size': 'captionLogoSize'
+  };
+
+  /** Every label's size, as the renderer takes them. */
+  function captionSizes() {
+    return {
+      name: state.captionNameSize,
+      coords: state.captionCoordsSize,
+      brand: state.captionBrandSize,
+      logo: state.captionLogoSize
+    };
+  }
+
   /** The map rectangle inside the picture, and the shape the ground must be. */
   function area() {
-    return render.frame(state.imageW, state.imageH, state.margin);
+    return render.frame(state.imageW, state.imageH, marginSpec());
   }
 
   function bbox() {
@@ -260,8 +311,12 @@
     if (fontReady) return fontReady;
 
     var fonts = doc.fonts;
+    // Both faces: the lettering's and the labels'.
     var loading = fonts && fonts.load
-      ? fonts.load('16px "Source Code Pro"').catch(function () { return null; })
+      ? Promise.all([
+        fonts.load('16px "Source Code Pro"'),
+        fonts.load('700 16px "Space Mono"')
+      ]).catch(function () { return null; })
       : Promise.resolve(null);
 
     // The flag, not the promise, is what paint() tests: a resolved promise
@@ -272,6 +327,35 @@
     });
 
     return fontReady;
+  }
+
+  /*
+   * The Altytude logo the labels carry: an inlined SVG, which decodes in its
+   * own time like the shirt photos. The preview draws the word without it and
+   * repaints once it has arrived; a download waits for it.
+   */
+  var logoWaiting = false;
+
+  /** The logo, or null while it is still decoding. */
+  function logoImage() {
+    var logo = $('altytude-logo');
+    return logo && logo.complete && logo.naturalWidth ? logo : null;
+  }
+
+  function waitForLogo() {
+    var logo = $('altytude-logo');
+    if (logoWaiting || !logo) return;
+    logoWaiting = true;
+    logo.addEventListener('load', function () {
+      logoWaiting = false;
+      paint();
+    }, { once: true });
+  }
+
+  function logoReady() {
+    var logo = $('altytude-logo');
+    if (!logo || !state.captionsOn || logoImage()) return Promise.resolve();
+    return logo.decode ? logo.decode().catch(function () { return null; }) : Promise.resolve();
   }
 
   function isContours() { return state.design === 'contours'; }
@@ -363,7 +447,7 @@
       ramp: state.asciiRamp,
       invert: state.asciiInvert,
       weight: state.asciiWeight,
-      margin: state.margin,
+      margin: marginSpec(),
       transparent: state.transparent
     };
   }
@@ -379,7 +463,7 @@
       separator: state.wordSeparator,
       caps: state.wordCaps,
       weight: state.wordWeight,
-      margin: state.margin,
+      margin: marginSpec(),
       transparent: state.transparent
     };
   }
@@ -400,7 +484,7 @@
       clarity: state.waterRealistic ? state.waterClarity : 0,
       skyZenith: palettes.parse(state.waterSkyTop),
       skyHorizon: palettes.parse(state.waterSkyLow),
-      margin: state.margin,
+      margin: marginSpec(),
       transparent: state.transparent,
       // What the terrain currently is, so the renderer can keep the shaded
       // surface between repaints. It is passed rather than worked out there
@@ -609,7 +693,8 @@
         }
 
         var traceKey = [terrainKey, state.levels, state.tidy, state.margin,
-          state.imageW, state.imageH].join('|');
+          state.captionsOn, state.captionNameSize, state.captionCoordsSize,
+          state.captionBrandSize, state.captionLogoSize, state.imageW, state.imageH].join('|');
         if (cache.result && cache.traceKey === traceKey) return cache.result;
 
         if (traceAbort) traceAbort.abort();
@@ -652,7 +737,7 @@
   function designFrame() {
     var width = render.DESIGN_WIDTH;
     var height = Math.round(width * (state.imageH / state.imageW));
-    return { width: width, height: height, area: render.frame(width, height, state.margin) };
+    return { width: width, height: height, area: render.frame(width, height, marginSpec()) };
   }
 
   function describe() {
@@ -686,7 +771,8 @@
    * the preview passes nothing and the cached trace is used.
    */
   function specFor(width, height, traced) {
-    return render.withBorder(designSpecFor(width, height, traced), borderOptions());
+    var spec = render.withBorder(designSpecFor(width, height, traced), borderOptions());
+    return render.withCaptions(spec, captionOptions());
   }
 
   /** The border the controls describe — one helper, so preview and PNG agree. */
@@ -696,7 +782,23 @@
       width: state.borderWidth,
       // Null follows the outermost contour line, whatever colour that is now.
       ink: state.borderInk ? palettes.parse(state.borderInk) : null,
-      margin: state.margin
+      margin: marginSpec()
+    };
+  }
+
+  /** The labels the controls describe — one helper, so preview and PNG agree. */
+  function captionOptions() {
+    return {
+      on: state.captionsOn,
+      // An empty box follows the place, so a fresh search renames the map.
+      name: state.captionName.trim() || state.place || '',
+      coords: fmtCoords(state.lat, state.lng),
+      brand: 'Altytude',
+      logo: logoImage(),
+      sizes: captionSizes(),
+      // Null follows the border, and through it the outermost contour line.
+      ink: state.captionInk ? palettes.parse(state.captionInk) : null,
+      margin: marginSpec()
     };
   }
 
@@ -716,6 +818,7 @@
     }
     return render.geometry(traced || cache.result, palette(), width, height, {
       weight: state.weight,
+      margin: marginSpec(),
       transparent: state.transparent,
       text: textOptions()
     });
@@ -737,6 +840,7 @@
     var spec = specFor(design.width, design.height);
     cache.geometry = spec;
     syncBorderInk(spec);
+    syncCaptionInk(spec);
 
     var canvas = $('view');
     var dpr = Math.min(2, global.devicePixelRatio || 1);
@@ -766,8 +870,11 @@
     // not": the water design draws no letters at all, and the question the
     // other way round would send it off to wait for a face it never uses and
     // then repaint the whole picture for nothing.
-    var setsType = !!spec.text || spec.kind === 'ascii' || spec.kind === 'words';
+    // The labels set type in every design, water included.
+    var setsType = !!spec.text || !!spec.captions ||
+      spec.kind === 'ascii' || spec.kind === 'words';
     if (setsType && !fontLoaded) ensureFont().then(paint);
+    if (spec.captions && !spec.captions.logo) waitForLogo();
 
     // Every repaint of the picture is a repaint of the shirt it is printed on.
     paintMockup();
@@ -789,6 +896,18 @@
       : 'Your own colour. Match the contours to follow them again.';
   }
 
+  /** The labels' colour picker, while the labels follow the map's frame. */
+  function syncCaptionInk(spec) {
+    var following = !state.captionInk;
+    if (following && spec.captions) $('caption-ink').value = palettes.hex(spec.captions.colour);
+    $('caption-match').disabled = following;
+    $('caption-note').textContent = !following
+      ? 'Your own colour. Match the map to follow it again.'
+      : spec.border
+        ? 'Following the colour of the border.'
+        : 'Following the colour of the outermost contour line.';
+  }
+
   /**
    * Is the picture drawn in light ink?
    *
@@ -803,6 +922,7 @@
       ? spec.layers.map(function (layer) { return layer.colour; })
       : (spec.css || []).map(palettes.parse);
     if (spec.border) colours.push(spec.border.colour);
+    if (spec.captions) colours.push(spec.captions.colour);
     if (!colours.length) return false;
 
     var total = colours.reduce(function (sum, rgb) {
@@ -1141,7 +1261,7 @@
   function renderPicture(width, height, onProgress) {
     var made = !needsTrace()
       ? Promise.resolve(null)
-      : render.trace(cache.grid, render.frame(width, height, state.margin), {
+      : render.trace(cache.grid, render.frame(width, height, marginSpec()), {
         levels: state.levels,
         spacing: render.EXPORT_SPACING,
         tidy: state.tidy,
@@ -1150,9 +1270,10 @@
 
     return made
       .then(function (result) {
-        // The face has to be in hand before the offscreen canvas letters with
-        // it; nothing on the page has necessarily rendered it yet.
-        return ensureFont().then(function () { return result; });
+        // The faces have to be in hand before the offscreen canvas letters with
+        // them, and the logo decoded before the labels draw it; nothing on the
+        // page has necessarily rendered either yet.
+        return Promise.all([ensureFont(), logoReady()]).then(function () { return result; });
       })
       .then(function (result) {
         var canvas = render.offscreen(width, height);
@@ -1302,6 +1423,7 @@
 
   function choose(result) {
     state.place = result.name;
+    $('caption-name').placeholder = result.name;
     setWidth(search.widthForResult(result));
     $('filename').placeholder = defaultFilename();
     $('results').hidden = true;
@@ -1950,6 +2072,42 @@
       repaint();
     });
 
+    /* --------------------------------------------------------------- labels */
+
+    // Switching the labels on or off, and resizing them, moves the map's edges
+    // to make room or give it back — so these rerun, as the margin does, rather
+    // than only repainting.
+    $('caption-on').addEventListener('change', function () {
+      state.captionsOn = $('caption-on').checked;
+      $('caption-rows').hidden = !state.captionsOn;
+      schedule();
+    });
+
+    Object.keys(CAPTION_SIZES).forEach(function (id) {
+      $(id).addEventListener('input', function () {
+        state[CAPTION_SIZES[id]] = parseFloat($(id).value);
+        $(id + '-val').textContent = state[CAPTION_SIZES[id]];
+        schedule();
+      });
+    });
+
+    var nameDebounce = null;
+    $('caption-name').addEventListener('input', function () {
+      state.captionName = $('caption-name').value;
+      clearTimeout(nameDebounce);
+      nameDebounce = setTimeout(repaint, 150);
+    });
+
+    $('caption-ink').addEventListener('input', function () {
+      state.captionInk = $('caption-ink').value;
+      repaint();
+    });
+
+    $('caption-match').addEventListener('click', function () {
+      state.captionInk = null;
+      repaint();
+    });
+
     /* --------------------------------------------------------------- mockup */
 
     Array.prototype.forEach.call(doc.getElementsByName('view'), function (radio) {
@@ -2263,6 +2421,18 @@
     if (state.borderInk) $('border-ink').value = state.borderInk;
     $('border-match').disabled = !state.borderInk;
 
+    $('caption-on').checked = state.captionsOn;
+    $('caption-rows').hidden = !state.captionsOn;
+    $('caption-name').value = state.captionName;
+    $('caption-name').placeholder = state.place;
+    Object.keys(CAPTION_SIZES).forEach(function (id) {
+      $(id).value = state[CAPTION_SIZES[id]];
+      $(id + '-val').textContent = state[CAPTION_SIZES[id]];
+    });
+    // A followed colour is filled in by the next paint, as the border's is.
+    if (state.captionInk) $('caption-ink').value = state.captionInk;
+    $('caption-match').disabled = !state.captionInk;
+
     $('ascii-cols').value = state.asciiCols;
     $('ascii-cols-val').textContent = state.asciiCols;
     $('ascii-ramp').value = state.asciiRamp;
@@ -2351,6 +2521,7 @@
       if (name) {
         state.place = name;
         $('q').value = name;
+        $('caption-name').placeholder = name;
       }
       setCentre(lat, lng, true);
       return rerun();
