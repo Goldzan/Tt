@@ -119,7 +119,7 @@
     captionLogoSize: 14,
     // Centres the map across the picture by clearing a strip on its left to
     // match the mark's on its right. The labels still go round the map.
-    captionCentre: false,
+    captionCentre: true,
     captionInk: null,
 
     /* Lettering. The words are one phrase per line, cycled up the levels, and
