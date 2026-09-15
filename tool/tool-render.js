@@ -1121,6 +1121,21 @@
     return canvas;
   }
 
+  /** Hand a blob to the browser as a download — the PNGs, and preset files. */
+  function save(blob, filename) {
+    var url = global.URL.createObjectURL(blob);
+    var link = global.document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    global.document.body.appendChild(link);
+    link.click();
+    link.remove();
+    // Revoked on a later turn: Safari has not finished with the URL when
+    // click() returns, and a revoked URL downloads nothing.
+    global.setTimeout(function () { global.URL.revokeObjectURL(url); }, 60000);
+    return blob;
+  }
+
   /**
    * Hand a canvas to the browser as a PNG download.
    *
@@ -1134,17 +1149,7 @@
           reject(new Error('The browser could not encode a PNG that large. Try a smaller size.'));
           return;
         }
-        var url = global.URL.createObjectURL(blob);
-        var link = global.document.createElement('a');
-        link.href = url;
-        link.download = filename;
-        global.document.body.appendChild(link);
-        link.click();
-        link.remove();
-        // Revoked on a later turn: Safari has not finished with the URL when
-        // click() returns, and a revoked URL downloads nothing.
-        global.setTimeout(function () { global.URL.revokeObjectURL(url); }, 60000);
-        resolve(blob);
+        resolve(save(blob, filename));
       }, 'image/png');
     });
   }
@@ -1169,6 +1174,7 @@
     withCaptions: withCaptions,
     trace: trace,
     offscreen: offscreen,
+    save: save,
     toPng: toPng
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

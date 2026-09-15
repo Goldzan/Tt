@@ -408,6 +408,49 @@ input[type=color]:disabled { opacity: .4; cursor: not-allowed; }
 .swatch b:nth-child(2) { width: 78%; }
 .swatch b:nth-child(3) { width: 56%; }
 
+/* --------------------------------------------------------------- premades */
+
+/* A card per premade design: its colours as a palette swatch, its name, and
+ * what it is of. */
+.premades {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.premades:empty { display: none; }
+
+.premade {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px;
+  background: var(--card);
+  border: var(--edge) solid var(--ink);
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 0;
+}
+.premade:hover { background: var(--paper); }
+.premade.on { box-shadow: 0 0 0 2px var(--accent) inset; }
+.premade .swatch { flex: none; width: 46px; height: 38px; padding: 7px; cursor: inherit; }
+.p-name { display: block; font-weight: 700; font-size: 13px; line-height: 1.3; }
+.p-meta { display: block; font-size: 11.5px; color: var(--muted); line-height: 1.3; }
+
+.premade-note { color: var(--ink); }
+
+.make-preset { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); }
+.make-preset summary {
+  margin-bottom: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.make-preset[open] summary { margin-bottom: 12px; }
+.make-preset .btn.wide { margin: 12px 0 0; }
+
 /* Wrapping, because the design row has outgrown one line of the control
  * column and a fourth choice would otherwise be pushed off the end of it. */
 .modes { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-bottom: 12px; font-size: 13.5px; }

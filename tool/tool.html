@@ -53,6 +53,39 @@
 
   <div class="controls">
 
+    <section class="panel" id="premade-section">
+      <h2>Premade designs</h2>
+      <div class="premades" id="premades"></div>
+      <p class="hint" id="premade-hint">Every setting on this page, chosen ahead. Pick one,
+        then change whatever you like.</p>
+      <p class="hint premade-note" id="premade-note" hidden></p>
+
+      <details class="make-preset">
+        <summary>Make a preset from these settings</summary>
+
+        <label class="field">
+          <span class="label">Name</span>
+          <input type="text" id="preset-name" spellcheck="false" autocomplete="off">
+        </label>
+
+        <label class="check">
+          <input type="checkbox" id="preset-place" checked>
+          <span><b>Include the place</b>
+            <span class="hint">Left out, the design keeps whatever place is on the map when it
+              is picked — a style to put on any mountain.</span></span>
+        </label>
+
+        <button class="btn wide" id="preset-save" type="button">Save preset file</button>
+        <p class="hint">Put the file in the <code>presets/</code> folder and rebuild with
+          <code>node scripts/build-tool.js</code>; it then appears in the list above.</p>
+
+        <button class="btn wide" id="preset-open" type="button">Try a preset file…</button>
+        <input type="file" id="preset-file" accept=".json,application/json" hidden>
+        <p class="hint">Opens a saved file without rebuilding, to check it before it goes in
+          the folder.</p>
+      </details>
+    </section>
+
     <section class="panel">
       <h2>Design</h2>
       <div class="modes">
@@ -629,6 +662,8 @@
 <script data-inline="src/search.js"></script>
 <script data-inline="src/map.js"></script>
 <script data-inline="tool/tool-palettes.js"></script>
+<script data-presets="presets"></script>
+<script data-inline="tool/tool-presets.js"></script>
 <script data-inline="tool/tool-render.js"></script>
 <script data-inline="tool/tool.js"></script>
 </body>

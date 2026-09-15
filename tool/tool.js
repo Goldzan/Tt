@@ -25,6 +25,7 @@
   var render = Topo.toolRender;
   var textpath = Topo.textpath;
   var ascii = Topo.ascii;
+  var designPresets = Topo.designPresets;
 
   var SLIDER_MAX = 1000;
 
@@ -186,6 +187,11 @@
     scale: 1,
     filename: ''
   };
+
+  /* The page as it first loads. A premade design is laid over this, so a
+   * setting its file leaves out comes back to where a fresh page has it rather
+   * than keeping whatever the last design left behind. */
+  var DEFAULTS = designPresets.clone(state);
 
   /* Stage caches. The keys say what each stage depends on; anything not in a
    * key cannot invalidate it. */
@@ -497,18 +503,24 @@
     };
   }
 
+  /**
+   * The colours a set of settings picks — the page's own, or a premade
+   * design's, which its card shows before anyone has picked it.
+   */
+  function lookPalette(look) {
+    return look.custom
+      ? presets.custom({
+        mode: look.mode,
+        ink: palettes.parse(look.ink),
+        stops: look.stops.map(palettes.parse),
+        background: palettes.parse(look.background)
+      })
+      : presets.get(look.preset);
+  }
+
   /** The palette the controls currently describe. */
   function palette() {
-    var base = state.custom
-      ? presets.custom({
-        mode: state.mode,
-        ink: palettes.parse(state.ink),
-        stops: state.stops.map(palettes.parse),
-        background: palettes.parse(state.background)
-      })
-      : presets.get(state.preset);
-
-    var out = presets.withIndex(base, indexSettings());
+    var out = presets.withIndex(lookPalette(state), indexSettings());
     // The background picker always wins, and picking a preset moves it to that
     // preset's own colour — so what the swatch shows is what gets drawn.
     out.background = palettes.parse(state.background);
@@ -833,6 +845,10 @@
    * and index settings all end here without touching the network or the tracer.
    */
   function paint() {
+    // Every change on the page ends in a paint, so this is where the premade
+    // list learns whether what is on screen is still the design last picked.
+    syncPremades();
+
     // The designs need different things to exist: a grid of characters needs
     // only the ground, lines need the trace made from it, and the water design
     // is the one that needs both — a shaded surface off the elevation with the
@@ -1093,6 +1109,8 @@
    */
   function paintMockup() {
     if (!isShirt()) return;
+    // Moving the print or changing the shirt repaints only this, not paint().
+    syncPremades();
 
     // The sliders too, because what they can do depends on the picture's
     // shape, and a new shape arrives here as a repaint.
@@ -1697,9 +1715,243 @@
         : count + ' phrases, cycled';
   }
 
+  /* --------------------------------------------------------------- premades */
+
+  /* The premade designs in the list, as { preset, problems, fromFile }: the
+   * ones built into the page from presets/, then any opened off the disk. */
+  var premades = [];
+
+  /* The design last picked, which settings it set and what they were once it
+   * had — so the panel can tell whether what is on screen is still it. */
+  var picked = null;
+
+  function radioValues(name) {
+    return Array.prototype.map.call(doc.getElementsByName(name), function (radio) {
+      return radio.value;
+    });
+  }
+
+  /** A design's name as the Design panel writes it: 'contours' is Contour lines. */
+  function designName(value) {
+    var radio = doc.querySelector('input[name=design][value="' + value + '"]');
+    return radio ? radio.parentNode.textContent.trim() : value;
+  }
+
+  /**
+   * The settings that have to be one of a list, and the lists. A string of the
+   * right kind can still name a design or a palette the page does not have.
+   */
+  function presetChoices() {
+    return {
+      design: radioValues('design'),
+      detail: Object.keys(DETAIL),
+      mode: radioValues('mode'),
+      preset: presets.all().map(function (palette) { return palette.id; }),
+      shirtColour: Object.keys(SHIRT_COLOURS)
+    };
+  }
+
+  /**
+   * Put a preset file in the list — from the build, or opened off the disk —
+   * in place of any already there under the same name, so trying an edited
+   * copy of a built-in design stands in for the one it was saved from.
+   *
+   * Settings the page could not use are skipped, and said so both in the
+   * console now and under the list when the design is picked: an author
+   * needs to hear about a typo, and a customer can still use the rest.
+   */
+  function addPremade(data, id, fromFile) {
+    var read = designPresets.read(data, id, DEFAULTS, presetChoices());
+    if (!read.preset) throw new Error(read.problems.join('; '));
+    if (read.problems.length && global.console) {
+      global.console.warn('Preset ' + id + ': ' + read.problems.join('; '));
+    }
+
+    var entry = { preset: read.preset, problems: read.problems, fromFile: fromFile };
+    for (var i = 0; i < premades.length; i++) {
+      if (premades[i].preset.id === id) {
+        premades[i] = entry;
+        return entry;
+      }
+    }
+    premades.push(entry);
+    return entry;
+  }
+
+  function loadPremades() {
+    designPresets.files().forEach(function (file) {
+      try {
+        addPremade(file.data, file.id, false);
+      } catch (err) {
+        if (global.console) global.console.warn('Preset ' + file.id + ' skipped: ' + err.message);
+      }
+    });
+    renderPremades();
+  }
+
+  /**
+   * A card for each premade design: its colours in the palette swatch the
+   * Colours panel uses, its name, and what it is of. Shown as it would be
+   * picked now — a design with no place of its own goes on the current one.
+   */
+  function renderPremades() {
+    var box = $('premades');
+    box.textContent = '';
+
+    premades.forEach(function (entry) {
+      var preset = entry.preset;
+      var look = designPresets.resolve(preset, DEFAULTS, state);
+
+      var button = doc.createElement('button');
+      button.type = 'button';
+      button.className = 'premade';
+      button.setAttribute('data-id', preset.id);
+      button.setAttribute('aria-pressed', 'false');
+      if (preset.description) button.title = preset.description;
+
+      var swatch = doc.createElement('span');
+      swatch.className = 'swatch';
+      swatch.style.background = palettes.css(palettes.parse(look.background));
+      var colours = lookPalette(look);
+      for (var i = 0; i < 3; i++) {
+        var line = doc.createElement('b');
+        line.style.background = palettes.css(palettes.inkFor(colours, i, 3));
+        swatch.appendChild(line);
+      }
+      button.appendChild(swatch);
+
+      var text = doc.createElement('span');
+      var name = doc.createElement('span');
+      name.className = 'p-name';
+      name.textContent = preset.name;
+      var meta = doc.createElement('span');
+      meta.className = 'p-meta';
+      meta.textContent = [
+        designName(look.design),
+        preset.hasPlace ? look.place : 'any place',
+        entry.fromFile ? 'from a file' : ''
+      ].filter(Boolean).join(' · ');
+      text.appendChild(name);
+      text.appendChild(meta);
+      button.appendChild(text);
+
+      button.addEventListener('click', function () { applyPremade(entry); });
+      box.appendChild(button);
+    });
+
+    syncPremades();
+  }
+
+  /**
+   * Set every setting on the page to a premade design's.
+   *
+   * The palette goes first, because adopting one moves the background and the
+   * index rhythm to its own — and the file's values for those then win, so a
+   * design that retuned its palette's background keeps the retune. Then the
+   * same clamps a typed size or distance gets, every control brought up to
+   * date, and one rerun: whatever the design changed — the place, the shape,
+   * the levels — costs what that change costs and no more.
+   */
+  function applyPremade(entry) {
+    var preset = entry.preset;
+    var settings = designPresets.resolve(preset, DEFAULTS, state);
+    var moved = settings.lat !== state.lat || settings.lng !== state.lng;
+
+    adoptPreset(settings.preset);
+    Object.keys(settings).forEach(function (key) { state[key] = settings[key]; });
+    state.placement = mergePlacement(PLACEMENT_DEFAULTS, settings.placement);
+    setWidth(state.widthM);
+    setImageSize(state.imageW, state.imageH);
+    syncControls();
+    $('results').hidden = true;
+    if (moved) syncMap(true);
+
+    // A design with no place of its own is still itself on another mountain.
+    var keys = Object.keys(settings).filter(function (key) {
+      return preset.hasPlace || !designPresets.isPlace(key);
+    });
+    picked = { preset: preset, problems: entry.problems, keys: keys, snapshot: snapshot(keys) };
+    syncPremades();
+    return rerun();
+  }
+
+  function snapshot(keys) {
+    return JSON.stringify(keys.map(function (key) { return state[key]; }));
+  }
+
+  /** Light the picked design's card while the page is still exactly it. */
+  function syncPremades() {
+    var same = !!picked && snapshot(picked.keys) === picked.snapshot;
+    Array.prototype.forEach.call($('premades').children, function (card) {
+      var on = same && card.getAttribute('data-id') === picked.preset.id;
+      card.classList.toggle('on', on);
+      card.setAttribute('aria-pressed', String(on));
+    });
+
+    var note = !premades.length ? 'None in this build yet — make one below.'
+      : !picked ? ''
+        : picked.problems.length
+          ? 'Skipped in ' + picked.preset.name + ': ' + picked.problems.join('; ') + '.'
+          : same ? '' : 'Changed since you picked ' + picked.preset.name + '. Pick it again to go back.';
+    $('premade-note').textContent = note;
+    $('premade-note').hidden = !note;
+
+    $('preset-name').placeholder = defaultPresetName();
+  }
+
+  /** What a saved preset is called if nobody names it. */
+  function defaultPresetName() {
+    var colours = state.custom ? 'custom colours' : presets.get(state.preset).name;
+    var look = designName(state.design) + ' in ' + colours;
+    return $('preset-place').checked && state.place ? state.place + ' — ' + look : look;
+  }
+
+  /**
+   * Save the page's settings as a preset file, named after the name box.
+   * Nothing is added to the list: a design is only premade once its file is in
+   * presets/ and the page has been rebuilt with it.
+   */
+  function savePreset() {
+    var name = $('preset-name').value.trim() || defaultPresetName();
+    var file = designPresets.write(state, name, $('preset-place').checked);
+    var filename = slug(name) + '.json';
+    render.save(new global.Blob([JSON.stringify(file, null, 2) + '\n'],
+      { type: 'application/json' }), filename);
+    status('Saved ' + filename + ' — put it in presets/ and rebuild to add it to the list.', false);
+    return file;
+  }
+
+  /**
+   * Pick a preset file straight off the disk, without rebuilding: it joins the
+   * list for this visit, under its file name, and is picked at once.
+   */
+  function openPresetFile(file) {
+    return file.text()
+      .then(function (text) { return JSON.parse(text); })
+      .then(function (data) {
+        var entry = addPremade(data, file.name.replace(/\.json$/i, ''), true);
+        renderPremades();
+        return applyPremade(entry);
+      })
+      .catch(function (err) {
+        status(file.name + ' is not a preset file: ' + err.message, false);
+      });
+  }
+
   /* ------------------------------------------------------------------- wire */
 
   function wire() {
+    $('preset-save').addEventListener('click', savePreset);
+    // The name it would be saved under says whether the place is in it.
+    $('preset-place').addEventListener('change', syncPremades);
+    $('preset-open').addEventListener('click', function () { $('preset-file').click(); });
+    $('preset-file').addEventListener('change', function () {
+      var file = $('preset-file').files[0];
+      // Emptied, so opening the same file again after editing it still fires.
+      $('preset-file').value = '';
+      if (file) openPresetFile(file);
+    });
+
     $('search-go').addEventListener('click', runSearch);
     $('q').addEventListener('keydown', function (ev) {
       if (ev.key === 'Enter') { ev.preventDefault(); runSearch(); }
@@ -2401,6 +2653,7 @@
     $('index-width').value = state.indexWidth;
     $('index-width-val').textContent = fixed(state.indexWidth, 1) + '×';
     $('index-ink').value = state.indexInk;
+    $('index-tint').checked = state.indexTint;
     $('index-ink').disabled = !state.indexTint;
     $('tidy').checked = state.tidy;
     $('detail').value = state.detail;
@@ -2499,6 +2752,7 @@
     renderAspects();
     wire();
     syncControls();
+    loadPremades();
 
     // Started now rather than when the lettering is first switched on: it is
     // an inlined data URI, so this costs no request and is long since ready by
@@ -2548,6 +2802,20 @@
       }
       syncControls();
       return rerun();
+    },
+    // The premade designs in the list, and picking one, as its card does.
+    presets: function () {
+      return premades.map(function (entry) { return entry.preset; });
+    },
+    pickPreset: function (id) {
+      for (var i = 0; i < premades.length; i++) {
+        if (premades[i].preset.id === id) return applyPremade(premades[i]);
+      }
+      return Promise.reject(new Error('No premade design called ' + id + '.'));
+    },
+    // What "Save preset file" would write, without the download.
+    presetFile: function (name, withPlace) {
+      return designPresets.write(state, name || defaultPresetName(), withPlace !== false);
     },
     render: rerun,
     download: download,
